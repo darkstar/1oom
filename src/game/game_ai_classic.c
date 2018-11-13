@@ -3219,6 +3219,24 @@ static bool game_ai_classic_bomb(struct game_s *g, player_id_t player, uint8_t p
 
 /* -------------------------------------------------------------------------- */
 
+static void game_ai_classic_bombed(struct game_s *g, player_id_t player, player_id_t att, uint8_t planet, int popdmg, int factdmg, int biodmg)
+{
+    if ((g->planet[planet].pop == 0) && IS_HUMAN(g, att)) {
+        int dv;
+        if (g->eto[player].treaty[att] < TREATY_WAR) {
+            game_diplo_start_war_swap(g, player, att);
+            dv = 13;
+        } else {
+            dv = 10;
+        }
+        game_diplo_act(g, -50 - rnd_1_n(50, &g->seed), att, player, dv, planet, 0);
+    } else {
+        game_diplo_battle_finish(g, player, att, popdmg, 0, biodmg, 0, planet);
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+
 static void game_ai_classic_ground(struct game_s *g, player_id_t def, player_id_t att, uint8_t planet, int pop_killed, bool owner_changed)
 {
     if (IS_HUMAN(g, def)) {
@@ -4407,6 +4425,7 @@ const struct game_ai_s game_ai_classic = {
     game_ai_classic_battle_ai_retreat,
     game_ai_classic_tech_next,
     game_ai_classic_bomb,
+    game_ai_classic_bombed,
     game_ai_classic_ground,
     game_ai_classic_crank_tech, /* plague */
     game_ai_classic_crank_tech, /* nova */
@@ -4444,6 +4463,7 @@ const struct game_ai_s game_ai_classicplus = {
     game_ai_classic_battle_ai_retreat,
     game_ai_classic_tech_next,
     game_ai_classic_bomb,
+    game_ai_classic_bombed,
     game_ai_classic_ground,
     game_ai_classic_crank_tech, /* plague */
     game_ai_classic_crank_tech, /* nova */

@@ -500,10 +500,12 @@ void ui_starmap_draw_starmap(struct starmap_data_s *d)
         const fleet_enroute_t *r = &g->enroute[i];
         if (BOOLVEC_IS1(r->visible, d->api)) {
             uint8_t *gfx = ui_data.gfx.starmap.smalship[g->eto[r->owner].banner];
-            const planet_t *p = &g->planet[r->dest];
+            const planet_t *p;
             tx = (r->x - x) * 2 + 8;
             ty = (r->y - y) * 2 + 8;
-            if (p->x < r->x) {
+            if (r->dest == PLANET_NONE) {
+                lbxgfx_set_frame_0(gfx);
+            } else if ((r->dest == PLANET_LEFT) || (g->planet[r->dest].x < r->x)) {
                 lbxgfx_set_new_frame(gfx, 1);
             } else {
                 lbxgfx_set_frame_0(gfx);
@@ -519,10 +521,12 @@ void ui_starmap_draw_starmap(struct starmap_data_s *d)
         const transport_t *r = &g->transport[i];
         if (BOOLVEC_IS1(r->visible, d->api)) {
             uint8_t *gfx = ui_data.gfx.starmap.smaltran[g->eto[r->owner].banner];
-            const planet_t *p = &g->planet[r->dest];
+            const planet_t *p;
             tx = (r->x - x) * 2 + 8;
             ty = (r->y - y) * 2 + 8;
-            if (p->x < r->x) {
+            if (r->dest == PLANET_NONE) {
+                lbxgfx_set_frame_0(gfx);
+            } else if ((r->dest == PLANET_LEFT) || (g->planet[r->dest].x < r->x)) {
                 lbxgfx_set_new_frame(gfx, 1);
             } else {
                 lbxgfx_set_frame_0(gfx);

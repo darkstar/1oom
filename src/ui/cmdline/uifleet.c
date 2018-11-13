@@ -219,7 +219,7 @@ int ui_cmd_fleet_redir(struct game_s *g, int api, struct input_token_s *param, i
                 printf("%s %i %s\n", game_str_sm_outsr, dist - e->fuel_range, game_str_sm_parsecs2);
                 return -1;
             }
-            game_fleet_redirect(g, r, pon, dest);
+            game_fleet_redirect_client(g, r, pon, dest);
         } else {
             transport_t *r = &(g->transport[n]);
             if (0
@@ -236,7 +236,7 @@ int ui_cmd_fleet_redir(struct game_s *g, int api, struct input_token_s *param, i
                 puts("Destination not OK");
                 return -1;
             }
-            r->dest = dest;
+            game_transport_redirect_client(g, r, dest);
         }
     }
     return 0;
@@ -322,10 +322,7 @@ int ui_cmd_fleet_send(struct game_s *g, int api, struct input_token_s *param, in
             return -1;
         }
     }
-    {
-        const uint8_t shiptypes[NUM_SHIPDESIGNS] = { 0, 1, 2, 3, 4, 5 };
-        game_send_fleet_from_orbit(g, api, pfi, pti, ships, shiptypes, NUM_SHIPDESIGNS);
-    }
+    game_send_fleet_from_orbit_client(g, api, pfi, pti, ships);
     return 0;
 }
 
@@ -381,7 +378,7 @@ int ui_cmd_fleet_scrap(struct game_s *g, int api, struct input_token_s *param, i
         }
     }
     if ((n >= 0) && (n < e->shipdesigns_num)) {
-        game_design_scrap(g, api, n, var != NULL);
+        game_design_scrap_client(g, api, n, var != NULL);
     }
     return 0;
 }

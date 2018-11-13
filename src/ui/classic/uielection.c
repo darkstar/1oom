@@ -4,6 +4,7 @@
 
 #include "ui.h"
 #include "comp.h"
+#include "game_aux.h"
 #include "game_election.h"
 #include "game_str.h"
 #include "hw.h"
@@ -31,8 +32,9 @@ struct election_data_s {
     uint8_t *gfx_cylinder;
     uint8_t *gfx_racem[4];
     uint8_t *gfx_race[PLAYER_NUM];
+    player_id_t api;
     bool flag_countdown;
-    int count;
+    int count, num_bg;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -40,6 +42,7 @@ struct election_data_s {
 static void election_load_data(struct election_data_s *d)
 {
     struct game_s *g = d->el->g;
+    d->gfx_cylinder = lbxfile_item_get(LBXFILE_COUNCIL, 1);
     ui_draw_erase_buf();
     for (int i = 0; i < 3; ++i) {
         const int item[3] = { 0x17, 0, 0x16 };
@@ -49,20 +52,23 @@ static void election_load_data(struct election_data_s *d)
         lbxfile_item_release(LBXFILE_COUNCIL, gfx);
     }
     hw_video_copy_back_to_page2();
-    d->gfx_cylinder = lbxfile_item_get(LBXFILE_COUNCIL, 1);
     {
-        int num;
+        int n, num;
         num = d->el->num;
-        SETRANGE(num, 1, 4);
-        for (int i = 0; i < num; ++i) {
-            d->gfx_racem[i] = lbxfile_item_get(LBXFILE_COUNCIL, 0xc + g->eto[d->el->tbl_ei[i]].race);
+        n = 0;
+        for (int i = 0; (i < num) && (n < 4); ++i) {
+            player_id_t pi = d->el->tbl_ei[i];
+            if (pi != d->api) {
+                d->gfx_racem[n++] = lbxfile_item_get(LBXFILE_COUNCIL, 0xc + g->eto[pi].race);
+            }
         }
-        for (int i = num; i < 4; ++i) {
+        d->num_bg = n;
+        for (int i = n; i < 4; ++i) {
             d->gfx_racem[i] = 0;
         }
-        num = d->el->num + 1;
         for (int i = 0; i < num; ++i) {
-            d->gfx_race[i] = lbxfile_item_get(LBXFILE_COUNCIL, 0x2 + g->eto[d->el->tbl_ei[i]].race);
+            player_id_t pi = d->el->tbl_ei[i];
+            d->gfx_race[i] = lbxfile_item_get(LBXFILE_COUNCIL, 0x2 + g->eto[pi].race);
         }
     }
 }
@@ -87,7 +93,7 @@ static void ui_election_draw_cb(void *vptr)
         }
     }
     lbxgfx_draw_frame(0, 0, d->gfx_cylinder, UI_SCREEN_W, ui_scale);
-    for (int i = 0; i < MIN(el->num, 4); ++i) {
+    for (int i = 0; i < d->num_bg; ++i) {
         const int lx0[4] = { 50, 200, 0, 275 };
         const int lx1[4] = { 125, 275, 50, 319 };
         lbxgfx_draw_frame_offs(0, 0, d->gfx_racem[i], lx0[i], 0, lx1[i], UI_VGA_H - 1, UI_SCREEN_W, ui_scale);
@@ -135,6 +141,12 @@ void ui_election_start(struct election_s *el)
     static struct election_data_s d;    /* HACK */
     d.el = el;
     el->uictx = &d;
+    if (el->g->gaux->multiplayer == GAME_MULTIPLAYER_LOCAL) {
+        d.api = PLAYER_NONE;
+    } else {
+        d.api = el->g->active_player;
+    }
+    d.flag_countdown = false;
     ui_switch_all(el->g);
     hw_video_copy_back_from_page2();
     hw_video_copy_back_to_page3();

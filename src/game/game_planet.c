@@ -215,6 +215,19 @@ static void move_ship_1(const struct game_s *g, planet_t *p)
 
 /* -------------------------------------------------------------------------- */
 
+void game_planet_colonize(struct game_s *g, uint8_t pli, player_id_t pi, int colony_ship)
+{
+    planet_t *p = &(g->planet[pli]);
+    p->owner = pi;
+    p->pop = 2;
+    p->turn.explore.colonize = PLAYER_NONE;
+    --g->eto[pi].orbit[pli].ships[colony_ship];
+    BOOLVEC_SET1(p->explored, pi);
+    BOOLVEC_SET0(p->extras, PLANET_EXTRAS_GOVERNOR);
+    BOOLVEC_SET0(p->extras, PLANET_EXTRAS_GOV_SPEND_REST_SHIP);
+    BOOLVEC_SET0(p->extras, PLANET_EXTRAS_GOV_SPEND_REST_IND);
+}
+
 void game_planet_destroy(struct game_s *g, uint8_t planet_i, player_id_t attacker)
 {
     planet_t *p = &(g->planet[planet_i]);
@@ -225,10 +238,7 @@ void game_planet_destroy(struct game_s *g, uint8_t planet_i, player_id_t attacke
         g->seen[owner][planet_i].bases = 0;
         g->seen[owner][planet_i].factories = 0;
     }
-    if (IS_HUMAN(g, owner)) {
-        /* WASBUG there was an unreliable mess here */
-        g->gaux->human_killer = attacker;
-    }
+    g->gaux->killer[owner] = attacker; /* WASBUG there was an unreliable mess here */
     p->rebels = 0;
     p->unrest = 0;
     p->reserve = 0;
@@ -736,4 +746,20 @@ void game_planet_govern_all_owned_by(struct game_s *g, player_id_t owner)
             game_planet_govern(g, p);
         }
     }
+}
+
+void game_planet_send_bc(struct game_s *g, player_id_t pi, uint8_t planet_i, uint32_t bc)
+{
+    empiretechorbit_t *e = &(g->eto[pi]);
+    planet_t *p = &(g->planet[planet_i]);
+    p->reserve += bc;
+    e->reserve_bc -= bc;
+}
+
+void game_planet_scrap_bases(struct game_s *g, player_id_t pi, uint8_t planet_i, uint16_t num)
+{
+    empiretechorbit_t *e = &(g->eto[pi]);
+    planet_t *p = &(g->planet[planet_i]);
+    p->missile_bases -= num;
+    e->reserve_bc += (num * game_get_base_cost(g, pi)) / 4;
 }

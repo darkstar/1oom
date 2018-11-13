@@ -11,7 +11,6 @@
 #include "log.h"
 #include "rnd.h"
 #include "types.h"
-#include "ui.h"
 
 /* -------------------------------------------------------------------------- */
 
@@ -154,20 +153,6 @@ static int game_spy_esp_get_value(struct game_s *g, struct spy_esp_s *s, tech_fi
     return v;
 }
 
-static void game_spy_esp_sub5(struct spy_esp_s *s, int r)
-{
-    for (int i = 0; i < s->tnum; ++i) {
-        if (s->tbl_tech2[i] > r) {
-            --s->tnum;
-            for (int j = 0; j < s->tnum; ++j) {
-                s->tbl_field[j] = s->tbl_field[j + 1];
-                s->tbl_tech2[j] = s->tbl_tech2[j + 1];
-            }
-            --i;
-        }
-    }
-}
-
 static player_id_t game_spy_frame_random(struct game_s *g, player_id_t spy, player_id_t target)
 {
     const empiretechorbit_t *et = &(g->eto[target]);
@@ -250,31 +235,31 @@ static void game_spy_espionage(struct game_s *g, player_id_t spy, player_id_t ta
 
 static void game_spy_sabotage(struct game_s *g, player_id_t spy, player_id_t target, bool flag_frame, int spies, bool flag_any_caught)
 {
-    int rcaught, v8 = 0, pl;
+    int rcaught, snum = 0, pl;
     bool flag_bases;
     rcaught = flag_any_caught ? (rnd_1_n(20, &g->seed) + 20) : 0;
     {
         int num;
         num = ((g->eto[spy].tech.percent[TECH_FIELD_WEAPON] + 9) * spies) / 10;
         for (int i = 0; i < num; ++i) {
-            v8 += rnd_1_n(5, &g->seed);
+            snum += rnd_1_n(5, &g->seed);
         }
     }
     flag_bases = (rnd_0_nm1(2, &g->seed) != 0);
     pl = game_planet_get_random(g, target); /* WASBUG? used a function that returned 0 on no planets */
-    if ((v8 > 0) && (pl != PLANET_NONE)) {
+    if ((snum > 0) && (pl != PLANET_NONE)) {
         planet_t *p = &(g->planet[pl]);
         g->evn.sabotage_spy[target][spy] = rcaught ? spy : PLAYER_NONE;
         if (IS_HUMAN(g, spy)) {
-            /*82431*/
-            g->evn.sabotage_num[target][spy] = v8;
+            g->evn.sabotage_num[target][spy] = snum;
             g->evn.sabotage_spy[target][spy] = flag_frame ? -1 : rcaught;
         } else if (IS_HUMAN(g, target)) {
             if (rnd_0_nm1(4, &g->seed) == 0) {
-                v8 = (p->pop * (v8 / 2)) / 100;
-                SETMAX(v8, 1);
-                SETMIN(v8, p->pop);
-                p->rebels += v8;
+                g->evn.sabotage_act[target][spy] = SABOTAGE_ACT_REVOLT;
+                snum = (p->pop * (snum / 2)) / 100;
+                SETMAX(snum, 1);
+                SETMIN(snum, p->pop);
+                p->rebels += snum;
                 SETMIN(p->rebels, p->pop);
                 if (p->rebels >= (p->pop / 2)) {
                     p->unrest = PLANET_UNREST_REBELLION;
@@ -282,37 +267,34 @@ static void game_spy_sabotage(struct game_s *g, player_id_t spy, player_id_t tar
                     p->rebels = p->pop;
                 }
             } else {
-                /*822f6*/
                 if (!flag_bases) {
-                    SETMIN(v8, p->factories);
+                    SETMIN(snum, p->factories);
                 } else {
-                    /*82328*/
-                    v8 /= 5;
-                    SETMIN(v8, p->missile_bases);
+                    snum /= 5;
+                    SETMIN(snum, p->missile_bases);
                 }
-                /*8235e*/
-                if (v8 > 0) {
-                    g->evn.sabotage_is_bases[target][spy] = flag_bases;
+                if (snum > 0) {
+                    g->evn.sabotage_act[target][spy] = flag_bases ? SABOTAGE_ACT_BASES : SABOTAGE_ACT_FACT;
                     g->evn.sabotage_planet[target][spy] = pl;
-                    g->evn.sabotage_num[target][spy] = v8;
+                    g->evn.sabotage_num[target][spy] = snum;
                     if (flag_frame) {
                         g->evn.sabotage_spy[target][spy] = game_spy_frame_random(g, spy, target);
                     }
                     if (flag_bases) {
-                        p->missile_bases -= v8;
+                        p->missile_bases -= snum;
                     } else {
-                        p->factories -= v8;
+                        p->factories -= snum;
                     }
                 }
             }
         } else {
-            /*8247a*/
             if (!flag_bases) {
-                SUBSAT0(p->factories, v8);
+                g->evn.sabotage_act[target][spy] = SABOTAGE_ACT_FACT;
+                SUBSAT0(p->factories, snum);
             } else {
-                /*82328*/
-                v8 /= 5;
-                SUBSAT0(p->missile_bases, v8);
+                g->evn.sabotage_act[target][spy] = SABOTAGE_ACT_BASES;
+                snum /= 5;
+                SUBSAT0(p->missile_bases, snum);
             }
             if (!flag_frame) {
                 game_diplo_act(g, -rcaught, spy, target, 6, pl, flag_bases);
@@ -382,6 +364,20 @@ int game_spy_esp_sub2(struct game_s *g, struct spy_esp_s *s, int a4)
         sum += s->tbl_num[f];
     }
     return sum;
+}
+
+void game_spy_esp_sub5(struct spy_esp_s *s, int r)
+{
+    for (int i = 0; i < s->tnum; ++i) {
+        if (s->tbl_tech2[i] > r) {
+            --s->tnum;
+            for (int j = 0; j < s->tnum; ++j) {
+                s->tbl_field[j] = s->tbl_field[j + 1];
+                s->tbl_tech2[j] = s->tbl_tech2[j + 1];
+            }
+            --i;
+        }
+    }
 }
 
 void game_spy_build(struct game_s *g)
@@ -459,8 +455,8 @@ void game_spy_turn(struct game_s *g, struct spy_turn_s *st)
             g->evn.spied_num[i][j] = 0;
             g->evn.spied_spy[j][i] = 0;
             g->evn.spied_spy[i][j] = 0;
-            g->evn.sabotage_is_bases[j][i] = 0;
-            g->evn.sabotage_is_bases[i][j] = 0;
+            g->evn.sabotage_act[j][i] = SABOTAGE_ACT_NONE;
+            g->evn.sabotage_act[i][j] = SABOTAGE_ACT_NONE;
             g->evn.sabotage_num[j][i] = 0;
             g->evn.sabotage_num[i][j] = 0;
             g->evn.sabotage_spy[j][i] = 0;
@@ -522,7 +518,8 @@ void game_spy_turn(struct game_s *g, struct spy_turn_s *st)
             SETMIN(numcaught, es->spies[target]);
             es->spies[target] -= numcaught;
             {
-                int r = rnd_1_n(100, &g->seed) + dt1;
+                int r;
+                r = rnd_1_n(100, &g->seed) + dt1;
                 if (r > 84) {
                     numsuccess = spies;
                 }
@@ -535,210 +532,6 @@ void game_spy_turn(struct game_s *g, struct spy_turn_s *st)
                 game_spy_espionage(g, spy, target, flag_frame, numsuccess, flag_any_caught, st);
             } else if (es->spymode[target] == SPYMODE_SABOTAGE) {
                 game_spy_sabotage(g, spy, target, flag_frame, numsuccess, flag_any_caught);
-            }
-        }
-    }
-}
-
-void game_spy_esp_human(struct game_s *g, struct spy_turn_s *st)
-{
-    /* FIXME refactor for multiplayer */
-    for (player_id_t spy = PLAYER_0; spy < g->players; ++spy) {
-        struct spy_esp_s s[1];
-        g->evn.newtech[spy].num = 0;
-        if (IS_AI(g, spy)) {
-            continue;
-        }
-        s->spy = spy;
-        for (player_id_t target = PLAYER_0; target < g->players; ++target) {
-            if ((spy != target) && (g->evn.spied_num[target][spy] > 0)) {
-                uint8_t tbl_tech[TECH_FIELD_NUM];
-                uint8_t flags_field;
-                s->target = target;
-                flags_field = 0;
-                for (int i = 0; i < TECH_FIELD_NUM; ++i) {
-                    tbl_tech[i] = 0;
-                }
-                for (int loops = 0; loops < 5; ++loops) {
-                    int num;
-                    num = game_spy_esp_sub1(g, s, 0, 0);
-                    game_spy_esp_sub5(s, st->tbl_rmax[target][spy]);
-                    for (int i = 0; i < num; ++i) {
-                        int field;
-                        field = s->tbl_field[i];
-                        if (tbl_tech[field] == 0) {
-                            tbl_tech[field] = s->tbl_tech2[i];
-                            flags_field |= (1 << field);
-                        }
-                    }
-                }
-                if (flags_field != 0) {
-                    int field;
-                    field = ui_spy_steal(g, spy, target, flags_field);
-                    if ((field >= 0) && (field < TECH_FIELD_NUM)) {
-                        bool framed;
-                        uint8_t planet;
-                        planet = game_planet_get_random(g, target);
-                        framed = (g->evn.spied_spy[target][spy] == -1);
-                        g->evn.stolen_field[target][spy] = field;
-                        g->evn.stolen_tech[target][spy] = tbl_tech[field];
-                        game_tech_get_new(g, spy, field, tbl_tech[field], TECHSOURCE_SPY, planet, target, framed);
-                        if (!framed) {
-                            game_diplo_act(g, -g->evn.spied_spy[target][spy], spy, target, 4, 0, target);
-                        }
-                        game_tech_finish_new(g, spy);
-                        ui_newtech(g, spy);
-                        g->evn.newtech[spy].num = 0;
-                    }
-                }
-            }
-        }
-    }
-    for (player_id_t player = PLAYER_0; player < g->players; ++player) {
-        uint16_t tbl[PLAYER_NUM];
-        int n;
-        if (IS_AI(g, player)) {
-            continue;
-        }
-        n = 0;
-        for (player_id_t spy = PLAYER_0; spy < g->players; ++spy) {
-            uint8_t tech;
-            tech = g->evn.stolen_tech[player][spy];
-            if ((spy != player) && (tech != 0)) {
-                tbl[n++] = ((((uint16_t)g->evn.stolen_spy[player][spy])) << 12) | ((((uint16_t)g->evn.stolen_field[player][spy])) << 8) | tech;
-            }
-        }
-        for (int loops = 0; loops < n; ++loops) {
-            for (int i = 0; i < n - 1; ++i) {
-                uint16_t v0, v1;
-                v0 = tbl[i];
-                v1 = tbl[i + 1];
-                if (v0 > v1) {
-                    tbl[i + 1] = v0;
-                    tbl[i] = v1;
-                }
-            }
-        }
-        for (int i = 0; i < n; ++i) {
-            uint16_t v;
-            v = tbl[i];
-            ui_spy_stolen(g, player, (v >> 12) & 7, (v >> 8) & 7, v & 0xff);
-        }
-    }
-}
-
-void game_spy_sab_human(struct game_s *g)
-{
-    /* FIXME refactor for multiplayer */
-    for (player_id_t player = PLAYER_0; player < g->players; ++player) {
-        if (IS_AI(g, player)) {
-            continue;
-        }
-        for (player_id_t target = PLAYER_0; target < g->players; ++target) {
-            int snum;
-            snum = g->evn.sabotage_num[target][player];
-            if ((player != target) && (snum > 0)) {
-                ui_sabotage_t act;
-                uint8_t planet;
-                planet_t *p;
-                player_id_t other1, other2;
-                act = ui_spy_sabotage_ask(g, player, target, &planet);
-                g->evn.sabotage_planet[target][player] = planet;
-                p = &(g->planet[planet]);
-                /*ui_spy_sabotage_ask:*/
-                switch (act) {
-                    case UI_SABOTAGE_FACT: /*0*/
-                        SETMIN(snum, p->factories);
-                        p->factories -= snum;
-                        break;
-                    case UI_SABOTAGE_BASES: /*1*/
-                        {
-                            int n;
-                            n = 0;
-                            for (int i = 0; i < snum; ++i) {
-                                if (!rnd_0_nm1(4, &g->seed)) {
-                                    ++n;
-                                }
-                            }
-                            snum = n;
-                        }
-                        SETMIN(snum, p->missile_bases);
-                        p->missile_bases -= snum;
-                        break;
-                    case UI_SABOTAGE_REVOLT: /*2*/
-                        snum = (p->pop * snum) / 200;
-                        if (p->pop < snum) {
-                            snum = p->pop - p->rebels;
-                        }
-                        SETMAX(snum, 1);
-                        p->rebels += snum;
-                        if (p->rebels >= (p->pop / 2)) {
-                            p->unrest = PLANET_UNREST_REBELLION;
-                            p->unrest_reported = false;
-                            p->rebels = p->pop / 2;    /* FIXME BUG? AI cheat? */
-                        }
-                        break;
-                    case UI_SABOTAGE_NONE: /*-1*/
-                    default:
-                        break;
-                }
-                other1 = PLAYER_NONE;
-                other2 = PLAYER_NONE;
-                if ((act != UI_SABOTAGE_NONE) && (act != UI_SABOTAGE_REVOLT)) {
-                    if (g->evn.spied_spy[target][player] != -1) {
-                        game_diplo_act(g, -g->evn.spied_spy[target][player], player, target, 6, planet, act);
-                    } else if ((snum != 0) && (act > UI_SABOTAGE_FACT)) {
-                        const empiretechorbit_t *et;
-                        et = &(g->eto[target]);
-                        for (int i = 0; (i < g->players) && (other2 == PLAYER_NONE); ++i) {
-                            if ((i != player) && BOOLVEC_IS1(et->contact, i)) {
-                                if (other1 == PLAYER_NONE) {
-                                    other1 = i;
-                                } else {
-                                    other2 = i;
-                                }
-                            }
-                        }
-                        if (other2 == PLAYER_NONE) {
-                            other1 = PLAYER_NONE;
-                        }
-                    }
-                }
-                if (act != UI_SABOTAGE_NONE) {
-                    int other;
-                    BOOLVEC_SET1(p->explored, player);
-                    g->seen[player][planet].owner = p->owner;
-                    g->seen[player][planet].pop = p->pop;
-                    g->seen[player][planet].bases = p->missile_bases;
-                    g->seen[player][planet].factories = p->factories;
-                    other = ui_spy_sabotage_done(g, player, player, target, act, other1, other2, planet, snum);
-                    if ((other2 != PLAYER_NONE) && (other != PLAYER_NONE)) {
-                        int v;
-                        v = -(rnd_1_n(12, &g->seed) + rnd_1_n(12, &g->seed));
-                        game_diplo_act(g, v, other, target, 7, planet, act);
-                    }
-                }
-            }
-        }
-    }
-    for (player_id_t player = PLAYER_0; player < g->players; ++player) {
-        if (IS_AI(g, player)) {
-            continue;
-        }
-        for (player_id_t spy = PLAYER_0; spy < g->players; ++spy) {
-            int snum;
-            snum = g->evn.sabotage_num[player][spy];
-            if ((player != spy) && (snum > 0)) {
-                ui_sabotage_t act;
-                uint8_t planet;
-                int spy2;
-                planet = g->evn.sabotage_planet[player][spy];
-                spy2 = g->evn.sabotage_spy[player][spy];
-                if (spy2 == -1) {
-                    spy2 = PLAYER_NONE;
-                }
-                act = g->evn.sabotage_is_bases[player][spy] ? UI_SABOTAGE_BASES : UI_SABOTAGE_FACT;
-                ui_spy_sabotage_done(g, player, spy2, player, act, PLAYER_NONE, PLAYER_NONE, planet, snum);
             }
         }
     }

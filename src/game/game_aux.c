@@ -3,12 +3,17 @@
 #include "game_aux.h"
 #include "bits.h"
 #include "game.h"
+#include "game_types.h"
 #include "lbx.h"
 #include "lib.h"
 #include "log.h"
 #include "os.h"
 #include "types.h"
 #include "util_math.h"
+
+/* -------------------------------------------------------------------------- */
+
+#define GAME_AUX_MOVEBUF_SIZE   ((FLEET_ENROUTE_MAX + TRANSPORT_MAX) * (MOVE_FRAMES_MAX / 2) * (4/*move*/ + 7/*show*/ + 2/*hide*/) + MOVE_FRAMES_MAX * (2/*start*/ + 2/*end*/ + 4/*monster*/))
 
 /* -------------------------------------------------------------------------- */
 
@@ -47,10 +52,11 @@ static void check_lbx_t5(const uint8_t *t, const char *lbxname, uint16_t want_nu
 
 /* -------------------------------------------------------------------------- */
 
-int game_aux_init(struct game_aux_s *gaux, struct game_s *g)
+int game_aux_init(struct game_aux_s *gaux, struct game_s *g, game_multiplayer_t mp, struct game_client_s *gcl, struct game_server_s *gsr)
 {
     uint8_t *data, *t;
 
+    memset(gaux, 0, sizeof(struct game_aux_s));
     memset(g, 0, sizeof(struct game_s));
     g->gaux = gaux;
 
@@ -92,13 +98,15 @@ int game_aux_init(struct game_aux_s *gaux, struct game_s *g)
     check_lbx_t5(t, "eventmsg", EVENTMSG_NUM, EVENTMSG_LEN);
     gaux->eventmsg = (const char *)(t + 4);
 
-    gaux->move_temp = 0;
     gaux->savenamebuflen = FSDEV_PATH_MAX;
     gaux->savenamebuf = lib_malloc(gaux->savenamebuflen);
     gaux->savebuflen = sizeof(struct game_s) + 64;
     gaux->savebuf = lib_malloc(gaux->savebuflen);
     gaux->flag_cheat_galaxy = false;
     gaux->flag_cheat_events = false;
+    gaux->multiplayer = mp;
+    gaux->gcl = gcl;
+    gaux->gsr = gsr;
     gaux->initialized = true;
     return 0;
 }
@@ -109,14 +117,30 @@ void game_aux_shutdown(struct game_aux_s *gaux)
         lbxfile_item_release_file(LBXFILE_RESEARCH);
         lbxfile_item_release_file(LBXFILE_EVENTMSG);
         lbxfile_item_release_file(LBXFILE_DIPLOMAT);
-        if (gaux->move_temp) {
-            lib_free(gaux->move_temp);
-            gaux->move_temp = 0;
-        }
         lib_free(gaux->savenamebuf);
         gaux->savenamebuf = 0;
         lib_free(gaux->savebuf);
         gaux->savebuf = 0;
+        for (int i = 0; i < PLAYER_NUM; ++i) {
+            if (gaux->gview[i]) {
+                gaux->gview[i]->gaux = NULL;
+                lib_free(gaux->gview[i]);
+                gaux->gview[i] = NULL;
+            }
+            if (gaux->movebuf[i]) {
+                lib_free(gaux->movebuf[i]);
+                gaux->movebuf[i] = NULL;
+            }
+            if (gaux->msgi[i].buf) {
+                lib_free(gaux->msgi[i].buf);
+                gaux->msgi[i].buf = NULL;
+            }
+            if (gaux->msgo[i].buf) {
+                lib_free(gaux->msgo[i].buf);
+                gaux->msgo[i].buf = NULL;
+            }
+        }
+        gaux->g = 0;
     }
 }
 
@@ -168,14 +192,27 @@ void game_aux_start(struct game_aux_s *gaux, struct game_s *g)
 {
     int n = 0;
     g->gaux = gaux;
+    gaux->g = g;
     init_star_dist(gaux, g);
     for (int i = 0; i < g->players; ++i) {
-        if (BOOLVEC_IS0(g->is_ai, i)) {
+        if (IS_HUMAN(g, i)) { /* TODO is server or !remote */
             ++n;
+            if (!gaux->gview[i]) {
+                gaux->gview[i] = lib_malloc(sizeof(struct game_s));
+            }
+            gaux->gview[i]->gaux = gaux;
+            if (!gaux->movebuf[i]) {
+                gaux->movebuf[i] = lib_malloc(GAME_AUX_MOVEBUF_SIZE);
+            }
+            if (!gaux->msgi[i].buf) {
+                gaux->msgi[i].buf = lib_malloc(GAME_AUX_MSGBUF_SIZE);
+            }
+            if (!gaux->msgo[i].buf) {
+                gaux->msgo[i].buf = lib_malloc(GAME_AUX_MSGBUF_SIZE);
+            }
         }
+        gaux->msgi[i].len = 0;
+        gaux->msgo[i].len = 0;
     }
     gaux->local_players = n;
-    if ((n > 1) && !gaux->move_temp) {
-        gaux->move_temp = lib_malloc(sizeof(*gaux->move_temp));
-    }
 }

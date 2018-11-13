@@ -7,22 +7,20 @@
 #include "comp.h"
 #include "game.h"
 #include "game_num.h"
-#include "game_str.h"
 #include "log.h"
 #include "types.h"
-#include "ui.h"
 #include "util.h"
 
 /* -------------------------------------------------------------------------- */
 
-static bool game_send_fleet_do(struct game_s *g, player_id_t owner, uint8_t from, uint8_t dest, const shipcount_t ships[NUM_SHIPDESIGNS], const uint8_t shiptypes[NUM_SHIPDESIGNS], uint8_t numtypes, bool retreat)
+static bool game_send_fleet_do(struct game_s *g, player_id_t owner, uint8_t from, uint8_t dest, const shipcount_t ships[NUM_SHIPDESIGNS], bool retreat)
 {
     fleet_enroute_t *r;
     const planet_t *pf, *pt;
     uint8_t speed;
     {
         bool found = false;
-        for (int i = 0; i < numtypes; ++i) {
+        for (int i = 0; i < NUM_SHIPDESIGNS; ++i) {
             if (ships[i] != 0) {
                 found = true;
                 break;
@@ -39,11 +37,10 @@ static bool game_send_fleet_do(struct game_s *g, player_id_t owner, uint8_t from
     } else {
         const shipdesign_t *sd = (&g->srd[owner].design[0]);
         speed = 100;
-        for (int i = 0; i < numtypes; ++i) {
+        for (int i = 0; i < NUM_SHIPDESIGNS; ++i) {
             if (ships[i] > 0) {
-                uint8_t s, st;
-                st = shiptypes[i];
-                s = sd[st].engine + 1;
+                uint8_t s;
+                s = sd[i].engine + 1;
                 SETMIN(speed, s);
             }
         }
@@ -51,11 +48,9 @@ static bool game_send_fleet_do(struct game_s *g, player_id_t owner, uint8_t from
     for (int i = 0; i < g->enroute_num; ++i) {
         r = &(g->enroute[i]);
         if ((r->owner == owner) && (r->x == pf->x) && (r->y == pf->y) && (r->dest == dest) && (r->speed == speed)) {
-            for (int j = 0; j < numtypes; ++j) {
+            for (int j = 0; j < NUM_SHIPDESIGNS; ++j) {
                 if (ships[j] > 0) {
-                    uint8_t st;
-                    st = shiptypes[j];
-                    ADDSATT(r->ships[st], ships[j], game_num_limit_ships);
+                    ADDSATT(r->ships[j], ships[j], game_num_limit_ships);
                 }
             }
             return true;
@@ -73,14 +68,7 @@ static bool game_send_fleet_do(struct game_s *g, player_id_t owner, uint8_t from
     r->speed = speed;
     r->retreat = retreat;
     for (int i = 0; i < NUM_SHIPDESIGNS; ++i) {
-        r->ships[i] = 0;
-    }
-    for (int i = 0; i < numtypes; ++i) {
-        if (ships[i] > 0) {
-            uint8_t st;
-            st = shiptypes[i];
-            r->ships[st] = ships[i];
-        }
+        r->ships[i] = ships[i];
     }
     BOOLVEC_CLEAR(r->visible, PLAYER_NUM);
     BOOLVEC_SET1(r->visible, owner);
@@ -88,21 +76,18 @@ static bool game_send_fleet_do(struct game_s *g, player_id_t owner, uint8_t from
     return true;
 }
 
-static bool game_send_fleet_from_orbit_do(struct game_s *g, player_id_t owner, uint8_t from, uint8_t dest, const shipcount_t ships[NUM_SHIPDESIGNS], const uint8_t shiptypes[NUM_SHIPDESIGNS], uint8_t numtypes, bool retreat)
+static bool game_send_fleet_from_orbit_do(struct game_s *g, player_id_t owner, uint8_t from, uint8_t dest, const shipcount_t ships[NUM_SHIPDESIGNS], bool retreat)
 {
-    if (!game_send_fleet_do(g, owner, from, dest, ships, shiptypes, numtypes, retreat)) {
+    if (!game_send_fleet_do(g, owner, from, dest, ships, retreat)) {
         return false;
     }
     {
         fleet_orbit_t *o = &(g->eto[owner].orbit[from]);
         bool found = false;
-        for (int i = 0; i < numtypes; ++i) {
-            o->ships[shiptypes[i]] -= ships[i];
-        }
         for (int i = 0; i < NUM_SHIPDESIGNS; ++i) {
+            o->ships[i] -= ships[i];
             if (o->ships[i] > 0) {
                 found = true;
-                break;
             }
         }
         if (!found) {
@@ -114,26 +99,27 @@ static bool game_send_fleet_from_orbit_do(struct game_s *g, player_id_t owner, u
 
 /* -------------------------------------------------------------------------- */
 
-bool game_send_fleet_from_orbit(struct game_s *g, player_id_t owner, uint8_t from, uint8_t dest, const shipcount_t ships[NUM_SHIPDESIGNS], const uint8_t shiptypes[NUM_SHIPDESIGNS], uint8_t numtypes)
+bool game_send_fleet_from_orbit(struct game_s *g, player_id_t owner, uint8_t from, uint8_t dest, const shipcount_t ships[NUM_SHIPDESIGNS])
 {
     if (dest == from) {
         return false;
     }
-    return game_send_fleet_from_orbit_do(g, owner, from, dest, ships, shiptypes, numtypes, false);
+    return game_send_fleet_from_orbit_do(g, owner, from, dest, ships, false);
 }
 
-bool game_send_fleet_retreat(struct game_s *g, player_id_t owner, uint8_t from, uint8_t dest, const shipcount_t ships[NUM_SHIPDESIGNS], const uint8_t shiptypes[NUM_SHIPDESIGNS], uint8_t numtypes)
+bool game_send_fleet_retreat(struct game_s *g, player_id_t owner, uint8_t from, uint8_t dest, const shipcount_t ships[NUM_SHIPDESIGNS])
 {
-    return game_send_fleet_from_orbit_do(g, owner, from, dest, ships, shiptypes, numtypes, true);
+    return game_send_fleet_from_orbit_do(g, owner, from, dest, ships, true);
 }
 
 bool game_send_fleet_reloc(struct game_s *g, player_id_t owner, uint8_t from, uint8_t dest, uint8_t si, shipcount_t shipnum)
 {
     shipcount_t ships[NUM_SHIPDESIGNS];
-    uint8_t shiptypes[NUM_SHIPDESIGNS];
-    ships[0] = shipnum;
-    shiptypes[0] = si;
-    return game_send_fleet_do(g, owner, from, dest, ships, shiptypes, 1, false);
+    for (int i = 0; i < NUM_SHIPDESIGNS; ++i) {
+        ships[i] = 0;
+    }
+    ships[si] = shipnum;
+    return game_send_fleet_do(g, owner, from, dest, ships, false);
 }
 
 bool game_send_transport(struct game_s *g, struct planet_s *pf)
@@ -303,4 +289,9 @@ void game_fleet_redirect(struct game_s *g, struct fleet_enroute_s *r, uint8_t pf
         r->dest = pto;
         r->speed = game_fleet_get_speed(g, r, pfrom, pto);
     }
+}
+
+void game_transport_redirect(struct game_s *g, struct transport_s *r, uint8_t pto)
+{
+    r->dest = pto;
 }

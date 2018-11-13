@@ -4,8 +4,8 @@
 
 #include "ui.h"
 #include "game.h"
-#include "game_diplo.h"
 #include "game_misc.h"
+#include "game_newtech.h"
 #include "game_num.h"
 #include "game_str.h"
 #include "game_tech.h"
@@ -21,6 +21,7 @@ struct newtech_data_s {
     struct game_s *g;
     player_id_t api;
     newtech_t nt;
+    uint8_t newtech_i;
     uint8_t dialog_type;
     bool flag_is_current;
     bool flag_choose_next;
@@ -71,7 +72,7 @@ static void ui_newtech_choose_next(struct newtech_data_s *d)
     rl_in[i].str = NULL;
     rl_in[i].display = NULL;
     i = ui_input_list(game_str_nt_choose, "> ", rl_in);
-    game_tech_start_next(d->g, d->api, d->nt.field, i);
+    game_turn_newtech_choose_next(d->g, d->api, d->nt.field, i);
 }
 
 static void newtech_adjust_draw_typestr(char *buf, const char *str1, const char *str2)
@@ -205,7 +206,7 @@ again:
             struct input_list_s rl_in[] = {
                 { -1, "1", NULL, NULL },
                 { -1, "2", NULL, NULL },
-                { -1, "0", NULL, "(none)" },
+                { PLAYER_NONE, "0", NULL, "(none)" },
                 { 0, NULL, NULL, NULL }
             };
             int frame;
@@ -215,10 +216,7 @@ again:
             rl_in[1].display = game_str_tbl_races[g->eto[d->nt.other2].race];
             puts(game_str_nt_frame);
             frame = ui_input_list(game_str_nt_victim, "> ", rl_in);
-            if (frame >= 0) {
-                g->evn.stolen_spy[d->nt.stolen_from][d->api] = frame;
-                game_diplo_esp_frame(g, frame, d->nt.stolen_from);
-            }
+            game_turn_newtech_frame(g, d->api, d->newtech_i, frame);
         }
         if (flag_dialog) {
             ui_newtech_adjust(d);
@@ -243,6 +241,7 @@ void ui_newtech(struct game_s *g, int pi)
     d.api = pi;
 
     for (int i = 0; i < g->evn.newtech[pi].num; ++i) {
+        d.newtech_i = i;
         d.nt = g->evn.newtech[pi].d[i];
         if (!flag_switch) {
             flag_switch = true;

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "game_turn.h"
+#include "bits.h"
 #include "boolvec.h"
 #include "comp.h"
 #include "game.h"
@@ -19,16 +20,22 @@
 #include "game_election.h"
 #include "game_end.h"
 #include "game_event.h"
+#include "game_explore.h"
 #include "game_fleet.h"
 #include "game_ground.h"
 #include "game_misc.h"
+#include "game_move.h"
 #include "game_news.h"
+#include "game_newtech.h"
 #include "game_num.h"
+#include "game_save.h"
 #include "game_shiptech.h"
 #include "game_spy.h"
 #include "game_stat.h"
 #include "game_str.h"
 #include "game_tech.h"
+#include "game_transport.h"
+#include "game_view.h"
 #include "log.h"
 #include "rnd.h"
 #include "types.h"
@@ -715,474 +722,6 @@ static void game_turn_build_ind(struct game_s *g)
     }
 }
 
-static void game_turn_move_ships(struct game_s *g)
-{
-    void *ctx;
-    bool local_multiplayer = g->gaux->local_players > 1, move_back = false;
-    ctx = ui_gmap_basic_init(g, local_multiplayer);
-    if (local_multiplayer) {
-        memcpy(g->gaux->move_temp->enroute, g->enroute, g->enroute_num * sizeof(fleet_enroute_t));
-        memcpy(g->gaux->move_temp->transport, g->transport, g->transport_num * sizeof(transport_t));
-        g->gaux->move_temp->crystal = g->evn.crystal;
-        g->gaux->move_temp->amoeba = g->evn.amoeba;
-    }
-    for (g->active_player = 0; g->active_player < g->players; ++g->active_player) {
-        bool flag_more;
-        if (BOOLVEC_IS1(g->is_ai, g->active_player)) {
-            continue;
-        }
-        if (move_back) {
-            memcpy(g->enroute, g->gaux->move_temp->enroute, g->enroute_num * sizeof(fleet_enroute_t));
-            memcpy(g->transport, g->gaux->move_temp->transport, g->transport_num * sizeof(transport_t));
-            g->evn.crystal = g->gaux->move_temp->crystal;
-            g->evn.amoeba = g->gaux->move_temp->amoeba;
-        }
-        game_update_visibility(g);
-        flag_more = true;
-        ui_gmap_basic_start_player(ctx, g->active_player);
-        for (int frame = 0; (frame < 20) && flag_more; ++frame) {
-            bool odd_frame;
-            game_update_visibility(g);
-            odd_frame = frame & 1;
-            ui_gmap_basic_start_frame(ctx, g->active_player);
-            flag_more = false;
-            for (int i = 0; i < g->enroute_num; ++i) {
-                fleet_enroute_t *r = &(g->enroute[i]);
-                if ((r->speed * 2) > frame) {
-                    bool in_nebula;
-                    int x, y;
-                    x = r->x;
-                    y = r->y;
-                    in_nebula = (odd_frame || (frame == 0)) ? false : game_xy_is_in_nebula(g, x, y);
-                    if (odd_frame || (frame == 0) || (!in_nebula)) {
-                        int x1, y1;
-                        const planet_t *p;
-                        p = &(g->planet[r->dest]);
-                        x1 = p->x;
-                        y1 = p->y;
-                        if (r->speed == FLEET_SPEED_STARGATE) {
-                            x = x1;
-                            y = y1;
-                        } else {
-                            flag_more = true;
-                            util_math_go_line_dist(&x, &y, x1, y1, odd_frame ? 6 : 5);
-                        }
-                        r->x = x;
-                        r->y = y;
-                    } else if (in_nebula) {
-                        flag_more = true;   /* WASBUG MOO1 stopped nebula movement early if no transports or faster ships enroute */
-                    }
-                }
-            }
-            for (int i = 0; i < g->transport_num; ++i) {
-                transport_t *r = &(g->transport[i]);
-                if ((r->speed * 2) > frame) {
-                    bool in_nebula;
-                    int x, y;
-                    x = r->x;
-                    y = r->y;
-                    in_nebula = (!odd_frame) ? false : game_xy_is_in_nebula(g, x, y);
-                    if ((!odd_frame) || (!in_nebula)) {
-                        int x1, y1;
-                        const planet_t *p;
-                        p = &(g->planet[r->dest]);
-                        x1 = p->x;
-                        y1 = p->y;
-                        if (r->speed == FLEET_SPEED_STARGATE) {
-                            x = x1;
-                            y = y1;
-                        } else {
-                            flag_more = true;
-                            util_math_go_line_dist(&x, &y, x1, y1, odd_frame ? 6 : 5);
-                        }
-                        r->x = x;
-                        r->y = y;
-                    } else if (in_nebula) {
-                        flag_more = true;   /* WASBUG MOO1 stopped nebula movement early if no fleets or faster ships enroute */
-                    }
-                }
-            }
-            for (int i = 0; i < 2; ++i) {
-                monster_t *m;
-                m = (i == 0) ? &(g->evn.crystal) : &(g->evn.amoeba);
-                if (m->exists && (m->counter <= 0)) {
-                    int x, y, x1, y1;
-                    const planet_t *p;
-                    p = &(g->planet[m->dest]);
-                    x1 = p->x;
-                    y1 = p->y;
-                    x = m->x;
-                    y = m->y;
-                    if (((x != x1) || (y != y1)) && (frame < 2)) {
-                        util_math_go_line_dist(&x, &y, x1, y1, odd_frame ? 6 : 5);
-                        m->x = x;
-                        m->y = y;
-                    }
-                }
-            }
-            ui_gmap_basic_draw_frame(ctx, g->active_player);
-            ui_gmap_basic_finish_frame(ctx, g->active_player);
-        }
-        move_back = local_multiplayer;
-    }
-    ui_gmap_basic_shutdown(ctx);
-    for (int i = 0; i < g->enroute_num; ++i) {
-        fleet_enroute_t *r = &(g->enroute[i]);
-        const planet_t *p;
-        p = &(g->planet[r->dest]);
-        if ((r->x == p->x) && (r->y == p->y)) {
-            fleet_orbit_t *o;
-            o = &(g->eto[r->owner].orbit[r->dest]);
-            for (int j = 0; j < NUM_SHIPDESIGNS; ++j) {
-                uint32_t s;
-                s = o->ships[j] + r->ships[j];
-                SETMIN(s, game_num_limit_ships);
-                o->ships[j] = s;
-            }
-            util_table_remove_item_any_order(i, g->enroute, sizeof(fleet_enroute_t), g->enroute_num);
-            --g->enroute_num;
-            --i;
-        }
-    }
-    game_update_visibility(g);
-}
-
-static void game_turn_explore(struct game_s *g)
-{
-    for (int pli = 0; pli < g->galaxy_stars; ++pli) {
-        planet_t *p = &(g->planet[pli]);
-        p->artifact_looter = PLAYER_NONE;
-        for (player_id_t i = PLAYER_0; i < g->players; ++i) {
-            if (BOOLVEC_IS0(p->explored, i) || (p->owner == PLAYER_NONE)) {
-                empiretechorbit_t *e = &(g->eto[i]);
-                bool flag_visible, by_scanner;
-                flag_visible = false;
-                for (int j = 0; j < e->shipdesigns_num; ++j) {
-                    if (e->orbit[pli].ships[j] > 0) {
-                        flag_visible = true;
-                        break;
-                    }
-                }
-                by_scanner = false;
-                if ((!flag_visible) && e->have_adv_scanner) {
-                    for (int pli2 = 0; pli2 < g->galaxy_stars; ++pli2) {
-                        const planet_t *p2 = &(g->planet[pli2]);
-                        if ((p2->owner == i) && (util_math_dist_fast(p->x, p->y, p2->x, p2->y) <= game_num_adv_scan_range)) {
-                            flag_visible = true;
-                            break;
-                        }
-                    }
-                    by_scanner = true;
-                }
-                /*c4ca*/
-                if (flag_visible) {
-                    bool first, flag_colony_ship, flag_do_colonize, was_explored;
-                    int best_colonize, best_colonyship = 0;
-                    /* FIXME artifacts disappearing due to scanning a planet is weird */
-                    first = BOOLVEC_IS_CLEAR(p->explored, PLAYER_NUM);
-                    if ((p->special == PLANET_SPECIAL_ARTIFACTS) && (!by_scanner) && first) {
-                        /* FIXME? AIs (last player ID) win on simultaneous explore */
-                        p->artifact_looter = i;
-                    }
-                    flag_colony_ship = false;
-                    flag_do_colonize = false;
-                    best_colonize = 200;
-                    for (int j = 0; j < e->shipdesigns_num; ++j) {
-                        const shipdesign_t *sd = &(g->srd[i].design[j]);
-                        int can_colonize;
-                        can_colonize = 200;
-                        for (int k = 0; k < SPECIAL_SLOT_NUM; ++k) {
-                            ship_special_t s;
-                            s = sd->special[k];
-                            if ((s >= SHIP_SPECIAL_STANDARD_COLONY_BASE) && (s <= SHIP_SPECIAL_RADIATED_COLONY_BASE)) {
-                                can_colonize = PLANET_TYPE_MINIMAL - (s - SHIP_SPECIAL_STANDARD_COLONY_BASE);
-                            }
-                        }
-                        if ((can_colonize < 200) && (e->orbit[pli].ships[j] > 0)) {
-                            flag_colony_ship = true;
-                            if (can_colonize < best_colonize) {
-                                best_colonize = can_colonize;
-                                best_colonyship = j;
-                            }
-                            if (e->race == RACE_SILICOID) {
-                                best_colonize = PLANET_TYPE_RADIATED;
-                            }
-                        }
-                    }
-                    if (0
-                      || (best_colonize == 200)
-                      || (p->owner != PLAYER_NONE)
-                      || (p->type == PLANET_TYPE_NOT_HABITABLE)
-                      || (p->type < best_colonize)
-                    ) {
-                        best_colonize = 0;
-                    }
-                    was_explored = BOOLVEC_IS1(p->explored, i);
-                    BOOLVEC_SET1(p->explored, i);
-                    if (IS_HUMAN(g, i)) {
-                        if ((best_colonize != 0) || (!was_explored)) {
-                            game_update_visibility(g);  /* from explore_draw_cb */
-                            if ((p->type < best_colonize) || (best_colonize == 0)) {
-                                flag_colony_ship = false;
-                            } else {
-                                flag_colony_ship = true;
-                            }
-                            if (ui_explore(g, i, pli, by_scanner, flag_colony_ship) && flag_colony_ship) {
-                                flag_do_colonize = true;
-                            }
-                        }
-                    } else {
-                        if (best_colonize != 0) {
-                            flag_do_colonize = true;
-                        }
-                    }
-                    if (flag_do_colonize) {
-                        p->owner = i;
-                        p->pop = 2;
-                        --e->orbit[pli].ships[best_colonyship];
-                        if ((pli == g->evn.planet_orion_i) && game_num_news_orion) {
-                            g->evn.have_orion_conquer = i + 1;
-                        }
-                        BOOLVEC_SET0(p->extras, PLANET_EXTRAS_GOVERNOR);
-                        BOOLVEC_SET0(p->extras, PLANET_EXTRAS_GOV_SPEND_REST_SHIP);
-                        BOOLVEC_SET0(p->extras, PLANET_EXTRAS_GOV_SPEND_REST_IND);
-                    }
-                }
-            }
-        }
-    }
-}
-
-static int game_turn_transport_shoot(struct game_s *g, uint8_t planet_i, player_id_t rowner, uint8_t speed, player_id_t attacker, int bases, weapon_t basewpnt)
-{
-    const planet_t *p = &(g->planet[planet_i]);
-    const empiretechorbit_t *ea = &(g->eto[attacker]);
-    const empiretechorbit_t *ed = &(g->eto[rowner]);
-    int totaldmg = 0, complevel, killed;
-    uint8_t bestcomp = 0, bestarmor = 0;
-    uint32_t tbl[WEAPON_NUM];
-    memset(tbl, 0, sizeof(tbl));
-    tbl[basewpnt] = bases * 24;
-    for (int i = 0; i < ea->shipdesigns_num; ++i) {
-        const shipdesign_t *sd = &(g->srd[attacker].design[i]);
-        uint8_t comp;
-        comp = sd->comp;
-        if (comp > speed) { /* FIXME BUG ? */
-            bestcomp = comp;
-        }
-        for (int j = 0; j < WEAPON_SLOT_NUM; ++j) {
-            weapon_t wpnt = sd->wpnt[j];
-            uint32_t v;
-            v = ea->orbit[planet_i].ships[i] * sd->wpnn[j];
-            if (v != 0) {
-                const struct shiptech_weap_s *w;
-                int ns;
-                w = &(tbl_shiptech_weap[wpnt]);
-                ns = w->numshots;
-                if (ns == -1) {
-                    ns = 4;
-                }
-                v *= ns;
-                if (w->nummiss != 0) {
-                    v *= w->nummiss;
-                }
-                SETMIN(v, game_num_max_trans_dmg);
-                if (w->is_bomb || w->is_bio) {
-                    v = 0;
-                }
-                if (w->misstype != 0) {
-                    v /= 2;
-                }
-                tbl[wpnt] += (v * 2) / speed;
-            }
-        }
-    }
-    if (bases > 0) {
-        bestcomp = game_get_best_comp(g, rowner, ed->tech.percent[TECH_FIELD_COMPUTER]);  /* FIXME should be ea ? */
-    }
-    complevel = (bestcomp - speed) * 2 + 12;
-    SETRANGE(complevel, 1, 20);
-    for (int i = 0; i < (game_num_orbital_weap_any ? WEAPON_NUM : WEAPON_CRYSTAL_RAY); ++i) {  /* WASBUG? excludes death ray and amoeba stream too */
-        uint32_t vcur = tbl[i];
-        if (vcur != 0) {
-            const struct shiptech_weap_s *w = &(tbl_shiptech_weap[i]);
-            int dmgmin, dmgmax;
-            dmgmin = w->damagemin;
-            dmgmax = w->damagemax;
-            if (dmgmin == dmgmax) {
-                for (uint32_t n = 0; n < vcur; ++n) {
-                    if (rnd_1_n(20, &g->seed) <= complevel) {
-                        totaldmg += dmgmax;
-                    }
-                }
-            } else {
-                /*7c47d*/
-                int dmgrange;
-                dmgrange = dmgmax - dmgmin + 1;
-                --dmgmin;
-                vcur = (complevel * vcur) / 20;
-                for (uint32_t n = 0; n < vcur; ++n) {
-                    int dmg;
-                    dmg = rnd_1_n(dmgrange, &g->seed) + dmgmin;
-                    if (dmg > 0) {
-                        totaldmg += dmg;
-                    }
-                }
-            }
-        }
-    }
-    /*7c521*/
-    {
-        const uint8_t *rc = &(g->srd[rowner].researchcompleted[TECH_FIELD_CONSTRUCTION][0]);
-        for (int i = 0; i < ed->tech.completed[TECH_FIELD_CONSTRUCTION]; ++i) {
-            const uint8_t *r;
-            r = RESEARCH_D0_PTR(g->gaux, TECH_FIELD_CONSTRUCTION, rc[i]);
-            if (r[0] == 7) {
-                bestarmor = r[1];
-            }
-        }
-    }
-    killed = totaldmg / ((bestarmor + 1) * 15);
-    SETMIN(killed, 1000);
-    for (monster_id_t i = MONSTER_CRYSTAL; i <= MONSTER_AMOEBA; ++i) {
-        monster_t *m;
-        m = (i == MONSTER_CRYSTAL) ? &(g->evn.crystal) : &(g->evn.amoeba);
-        if (m->exists && (m->killer == PLAYER_NONE) && (m->x == p->x) && (m->y == p->y)){
-            killed = 1000;
-        }
-    }
-    return killed;
-}
-
-static void game_turn_transport(struct game_s *g)
-{
-    for (int pli = 0; pli < g->galaxy_stars; ++pli) {
-        planet_t *p = &(g->planet[pli]);
-        for (player_id_t i = PLAYER_0; i < g->players; ++i) {
-            p->inbound[i] = 0;
-            p->total_inbound[i] = 0;
-        }
-    }
-    for (int i = 0; i < g->transport_num; ++i) {
-        transport_t *r = &(g->transport[i]);
-        planet_t *p;
-        uint8_t dest;
-        dest = r->dest;
-        p = &(g->planet[dest]);
-        if ((r->x == p->x) && (r->y == p->y)) {
-            int pop2, pop3;
-            player_id_t owner;
-            owner = r->owner;
-            pop2 = pop3 = r->pop;
-            for (int j = 0; j < g->players; ++j) {
-                treaty_t t;
-                if (j == owner) {
-                    continue;
-                }
-                t = g->eto[owner].treaty[j];
-                if ((j == p->owner) || (t == TREATY_NONE) || (t >= TREATY_WAR)) {
-                    empiretechorbit_t *e;
-                    e = &(g->eto[j]);
-                    if (j == p->owner) {
-                        pop3 -= game_turn_transport_shoot(g, dest, owner, r->speed, j, p->missile_bases, e->base_weapon);
-                    } else {
-                        /*e102*/
-                        bool any_ships;
-                        any_ships = false;
-                        for (int k = 0; k < e->shipdesigns_num; ++k) {
-                            if (e->orbit[dest].ships[k] > 0) {
-                                any_ships = true;
-                                break;
-                            }
-                        }
-                        if (any_ships) {
-                            pop3 -= game_turn_transport_shoot(g, dest, owner, r->speed, j, 0, WEAPON_NONE);
-                        }
-                    }
-                }
-            }
-            if (g->evn.have_guardian && (dest == g->evn.planet_orion_i)) {
-                pop3 = 0;
-            }
-            for (monster_id_t i = MONSTER_CRYSTAL; i <= MONSTER_AMOEBA; ++i) {
-                monster_t *m;
-                m = (i == MONSTER_CRYSTAL) ? &(g->evn.crystal) : &(g->evn.amoeba);
-                if (m->exists && /*(m->killer == PLAYER_NONE) &&*/ (m->x == p->x) && (m->y == p->y)) { /* FIXME dead monster kills transports ? */
-                    pop3 = 0;
-                }
-            }
-            SETMAX(pop3, 0);
-            if (g->eto[owner].have_combat_transporter) {
-                int n;
-                n = pop2 - pop3;
-                if (game_num_combat_trans_fix) {    /* do as OSG says: 50% chance, 25% if interdictor */
-                    int c;
-                    c = g->eto[p->owner].have_sub_space_int ? 4 : 2;
-                    for (int j = 0; j < n; ++j) {
-                        if (!rnd_0_nm1(c, &g->seed)) {
-                            ++pop3;
-                        }
-                    }
-                } else if (g->eto[p->owner].have_sub_space_int) {   /* WASBUG transporters only work when planet owner has interdictor */
-                    for (int j = 0; j < n; ++j) {
-                        if (!rnd_0_nm1(4, &g->seed)) {
-                            ++pop3;
-                        } else if (!rnd_0_nm1(2, &g->seed)) {
-                            ++pop3;
-                        }
-                    }
-                }
-            }
-            /*e2a4*/
-            if (pop3 <= 0) {
-                if (IS_HUMAN(g, owner) || ((p->owner != PLAYER_NONE) && IS_HUMAN(g, p->owner))) {
-                    char *buf = ui_get_strbuf();
-                    const char *s;
-                    if ((g->gaux->local_players == 1) && IS_HUMAN(g, owner)) {
-                        s = game_str_sb_your;
-                    } else {
-                        s = game_str_tbl_race[g->eto[owner].race];
-                    }
-                    sprintf(buf, "%s %s %s %s", s, game_str_sm_traad1, g->planet[dest].name, game_str_sm_traad2);
-                    ui_turn_msg(g, IS_HUMAN(g, owner) ? owner : p->owner, buf);
-                }
-            } else if (p->owner == PLAYER_NONE) {
-                /*e36d*/
-                if (IS_HUMAN(g, owner)) {
-                    char *buf = ui_get_strbuf();
-                    sprintf(buf, "%s %s %s", game_str_sm_trbdb1, g->planet[dest].name, game_str_sm_trbdb2);
-                    ui_turn_msg(g, owner, buf);
-                }
-            } else {
-                /*e3fe*/
-#if 0
-                if ((p->owner == PLAYER_NONE) || (p->pop == 0)) { /* never true (tested above) */
-                    /* ignored */
-                } else
-#endif
-                if (p->owner == owner) {
-                    if (p->unrest == PLANET_UNREST_REBELLION) {
-                        ADDSATT(p->inbound[owner], pop3, game_num_max_inbound);
-                        p->total_inbound[owner] += pop2;
-                    } else {
-                        ADDSATT(p->pop, pop3, p->max_pop3);
-                    }
-                } else {
-                    /*e5a6*/
-                    if (g->eto[owner].treaty[p->owner] != TREATY_ALLIANCE) {
-                        ADDSATT(p->inbound[owner], pop3, game_num_max_inbound);
-                        p->total_inbound[owner] += pop2;
-                    }
-                }
-            }
-            /*e639*/
-            util_table_remove_item_any_order(i, g->transport, sizeof(transport_t), g->transport_num);
-            --g->transport_num;
-            --i;
-        }
-    }
-}
-
 static void game_turn_coup(struct game_s *g)
 {
     uint8_t tbl_planets[PLAYER_NUM];
@@ -1294,7 +833,7 @@ static bool game_turn_check_end(struct game_s *g, struct game_end_s *ge)
         }
         if (!human_alive) {
             struct news_s ns;
-            int killer = g->gaux->human_killer;
+            int killer = g->gaux->killer[pih];
             if (killer >= g->players) {
                 killer = (pi1 != PLAYER_NONE) ? pi1 : 1;
             }
@@ -1345,8 +884,7 @@ static void game_turn_audiences(struct game_s *g)
                 e->diplo_type[pa] = 0;
             }
         }
-        game_tech_finish_new(g, ph);
-        ui_newtech(g, ph);
+        game_turn_newtech_send_single(g, ph);   /* FIXME */
     }
 }
 
@@ -1528,12 +1066,7 @@ static void game_turn_update_final_war(struct game_s *g)
         return;
     }
     game_tech_final_war_share(g);
-    for (player_id_t i = 0; i < g->players; ++i) {
-        if (IS_HUMAN(g, i)) {
-            game_tech_finish_new(g, i);
-            ui_newtech(g, i);
-        }
-    }
+    game_turn_newtech(g);
     for (player_id_t pi1 = PLAYER_0; pi1 < g->players; ++pi1) {
         empiretechorbit_t *e1 = &(g->eto[pi1]);
         for (player_id_t pi2 = pi1 + 1; pi2 < g->players; ++pi2) {
@@ -1553,15 +1086,14 @@ static void game_turn_update_final_war(struct game_s *g)
     }
 }
 
-/* -------------------------------------------------------------------------- */
-
-struct game_end_s game_turn_process(struct game_s *g)
+struct game_end_s game_turn_process_do(struct game_s *g)
 {
     struct game_end_s game_end;
     BOOLVEC_TBL_DECLARE(old_contact, PLAYER_NUM, PLAYER_NUM);
     uint8_t old_focus[PLAYER_NUM];
     int num_alive = 0, num_colony = 0;
     game_end.type = GAME_END_NONE;
+    game_view_update_all(g);
     game_turn_limit_ships(g);
     for (int i = 0; i < g->players; ++i) {
         BOOLVEC_TBL_COPY1(old_contact, g->eto[i].contact, i, PLAYER_NUM);
@@ -1596,10 +1128,15 @@ struct game_end_s game_turn_process(struct game_s *g)
     game_turn_build_ship(g);
     game_turn_reserve(g);
     game_turn_build_ind(g);
+    game_turn_server_send_state(g);
+    g->gaux->turn_phase = GAME_TURN_MOVE;
     game_turn_move_ships(g);
+    game_turn_move_to_orbit(g);
     game_turn_limit_ships(g);
     game_remove_empty_fleets(g);
     game_spy_report(g);
+    game_turn_server_send_state(g);
+    g->gaux->turn_phase = GAME_TURN_BATTLE;
     game_battle_handle_all(g);
     for (int i = 0; i < g->players; ++i) {
         g->evn.newtech[i].num = 0;
@@ -1614,14 +1151,8 @@ struct game_end_s game_turn_process(struct game_s *g)
     for (int i = 0; i < g->players; ++i) {
         g->evn.newtech[i].num = 0;
     }
-    /*935f*/
     game_tech_research(g);
-    for (int i = 0; i < g->players; ++i) {
-        if (IS_HUMAN(g, i)) {
-            game_tech_finish_new(g, i);
-            ui_newtech(g, i);
-        }
-    }
+    game_turn_newtech(g);
     /* FIXME useless? game_battle should have taken care of this */
     if (g->evn.have_guardian) {
         uint8_t o = g->evn.planet_orion_i;
@@ -1630,14 +1161,14 @@ struct game_end_s game_turn_process(struct game_s *g)
             memset(s, 0, sizeof(*s));
         }
     }
+    g->gaux->turn_phase = GAME_TURN_EXPLORE;
     game_turn_explore(g);
+    g->gaux->turn_phase = GAME_TURN_BOMB;
     game_turn_bomb(g);
     game_turn_transport(g);
-    {
-        const uint8_t *grdata;
-        grdata = game_turn_ground_resolve_all(g);
-        game_turn_ground_show_all(g, grdata);
-    }
+    g->gaux->turn_phase = GAME_TURN_GROUND;
+    game_turn_ground_resolve_all(g);
+    /*game_turn_ground_show_all(g, grdata);*/
     game_turn_coup(g);
     if (game_turn_check_end(g, &game_end)) {
         return game_end;
@@ -1653,13 +1184,7 @@ struct game_end_s game_turn_process(struct game_s *g)
             game_tech_get_artifact_loot(g, pli, looter);
         }
     }
-    for (int i = 0; i < g->players; ++i) {
-        if (IS_HUMAN(g, i)) {
-            game_tech_finish_new(g, i);
-            ui_newtech(g, i);
-        }
-        g->evn.newtech[i].num = 0;
-    }
+    game_turn_newtech(g);
     game_turn_update_have_met(g);
     game_ai->turn_diplo_p1(g);
     for (int i = 0; i < g->galaxy_stars; ++i) {
@@ -1679,6 +1204,7 @@ struct game_end_s game_turn_process(struct game_s *g)
       && (((g->galaxy_stars * 2) / 3) <= num_colony)
       && (g->end == GAME_END_NONE)
     ) {
+        g->gaux->turn_phase = GAME_TURN_ELECTION;
         game_election(g);
         g->election_held = true;
     }
@@ -1742,5 +1268,25 @@ struct game_end_s game_turn_process(struct game_s *g)
             game_planet_govern(g, p);
         }
     }
+    game_turn_server_send_state(g);
+    g->gaux->turn_phase = GAME_TURN_WAIT_INPUT;
+    return game_end;
+}
+
+/* -------------------------------------------------------------------------- */
+
+struct game_end_s game_turn_process(struct game_s *g)
+{
+    struct game_end_s game_end;
+    uint8_t old_home[PLAYER_NUM];
+    /* TODO autosave for non-local */
+    for (int i = 0; i < g->players; ++i) {
+        old_home[i] = g->evn.home[i];
+    }
+    game_end = game_turn_process_do(g);
+    if ((game_end.type == GAME_END_NONE) && (g->end == GAME_END_FINAL_WAR)) {
+        game_end.type = GAME_END_FINAL_WAR;
+    }
+    game_turn_server_send_end(g, &game_end, old_home);
     return game_end;
 }

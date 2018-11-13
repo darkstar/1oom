@@ -191,6 +191,26 @@ typedef struct newtechs_s {
     nexttech_t next[TECH_FIELD_NUM];
 } newtechs_t;
 
+typedef struct election_s {
+    struct game_s *g;
+    void *uictx;
+    char *buf;
+    const char *str;
+    int num, num_ai;
+    player_id_t tbl_ei[PLAYER_NUM];
+    uint8_t tbl_votes[PLAYER_NUM];
+    uint8_t voted[PLAYER_NUM]; /* 0=abstain, 1,2=candidate, 3=unknown */
+    player_id_t candidate[2];
+    uint16_t total_votes;
+    uint16_t got_votes[2];
+    player_id_t first_human;
+    player_id_t last_human;
+    int cur_i;
+    int ui_delay;
+    bool flag_show_votes;
+    bool flag_results_shown;
+} election_t;
+
 #define GAME_EVENT_TBL_NUM  20
 #define HELP_SHOWN_NUM  16
 
@@ -247,6 +267,7 @@ typedef struct gameevents_s {
     uint8_t report_stars;
     BOOLVEC_DECLARE(coup, PLAYER_NUM);
     newtechs_t newtech[PLAYER_NUM];
+    election_t election;
     shipsum_t new_ships[PLAYER_NUM][NUM_SHIPDESIGNS];
     uint16_t spies_caught[PLAYER_NUM][PLAYER_NUM]; /* [catcher][spy] */
     uint16_t spied_num[PLAYER_NUM][PLAYER_NUM]; /* [victim][spy] */
@@ -254,7 +275,7 @@ typedef struct gameevents_s {
     tech_field_t stolen_field[PLAYER_NUM][PLAYER_NUM]; /* [victim][spy] */
     uint8_t stolen_tech[PLAYER_NUM][PLAYER_NUM]; /* [victim][spy] */
     player_id_t stolen_spy[PLAYER_NUM][PLAYER_NUM]; /* [victim][spy] */
-    bool sabotage_is_bases[PLAYER_NUM][PLAYER_NUM]; /* [victim][spy] */
+    sabotage_act_t sabotage_act[PLAYER_NUM][PLAYER_NUM]; /* [victim][spy] */
     uint8_t sabotage_planet[PLAYER_NUM][PLAYER_NUM]; /* [victim][spy] */
     uint16_t sabotage_num[PLAYER_NUM][PLAYER_NUM]; /* [victim][spy] */
     player_id_t sabotage_spy[PLAYER_NUM][PLAYER_NUM]; /* [victim][spy] */

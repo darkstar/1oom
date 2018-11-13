@@ -971,3 +971,86 @@ void game_design_init_maxtech_haveflags(struct design_data_s *d)
     }
     game_design_update_haveflags(d);
 }
+
+int game_design_check(const struct game_s *g, player_id_t pi, const shipdesign_t *sd, bool check_space_cost)
+{
+    const empiretechorbit_t *e = &(g->eto[pi]);
+    if (sd->hull > SHIP_HULL_HUGE) {
+        return DESIGN_ERR_HULL;
+    }
+    {
+        uint8_t l0, l1;
+        l0 = e->banner * SHIP_LOOK_PER_BANNER + sd->hull * SHIP_LOOK_PER_HULL;
+        l1 = l0 + SHIP_LOOK_PER_HULL;
+        if ((sd->look < l0) || (sd->look >= l1)) {
+            return DESIGN_ERR_LOOK;
+        }
+        /* TODO check for duplicate look? */
+    }
+    for (int i = 0; i < WEAPON_SLOT_NUM; ++i) {
+        int wt;
+        wt = sd->wpnt[i];
+        if (wt >= WEAPON_NUM) {
+            return DESIGN_ERR_WEAP;
+        }
+        if (wt > WEAPON_NONE) {
+            tech_field_t fi;
+            fi = tbl_shiptech_weap[wt].is_bio ? TECH_FIELD_PLANETOLOGY : TECH_FIELD_WEAPON;
+            if (!game_tech_player_has_tech(g, fi, tbl_shiptech_weap[wt].tech_i, pi)) {
+                return DESIGN_ERR_WEAP;
+            }
+        } else if (sd->wpnn[i] != 0) {
+            return DESIGN_ERR_WEAP;
+        }
+        if (sd->wpnn[i] > 99) {
+            return DESIGN_ERR_WEAP;
+        }
+    }
+    if ((sd->engine >= SHIP_ENGINE_NUM) || (!game_tech_player_has_tech(g, TECH_FIELD_PROPULSION, tbl_shiptech_engine[sd->engine].tech_i, pi))) {
+        return DESIGN_ERR_ENGINE;
+    }
+    for (int i = 0; i < SPECIAL_SLOT_NUM; ++i) {
+        int st;
+        st = sd->special[i];
+        if ((st >= SHIP_SPECIAL_NUM) || ((st > SHIP_SPECIAL_NONE) && !game_tech_player_has_tech(g, tbl_shiptech_special[st].field, tbl_shiptech_special[st].tech_i, pi))) {
+            return DESIGN_ERR_SPECIAL;
+        }
+    }
+    if ((sd->shield >= SHIP_SHIELD_NUM) || ((sd->shield > SHIP_SHIELD_NONE) && !game_tech_player_has_tech(g, TECH_FIELD_FORCE_FIELD, tbl_shiptech_shield[sd->shield].tech_i, pi))) {
+        return DESIGN_ERR_SHIELD;
+    }
+    if ((sd->jammer >= SHIP_JAMMER_NUM) || ((sd->jammer > SHIP_JAMMER_NONE) && !game_tech_player_has_tech(g, TECH_FIELD_COMPUTER, tbl_shiptech_jammer[sd->jammer].tech_i, pi))) {
+        return DESIGN_ERR_JAMMER;
+    }
+    if ((sd->comp >= SHIP_COMP_NUM) || ((sd->comp > SHIP_COMP_NONE) && !game_tech_player_has_tech(g, TECH_FIELD_COMPUTER, tbl_shiptech_comp[sd->comp].tech_i, pi))) {
+        return DESIGN_ERR_COMP;
+    }
+    if ((sd->armor >= SHIP_ARMOR_NUM) || ((sd->armor > 0) && !game_tech_player_has_tech(g, TECH_FIELD_CONSTRUCTION, tbl_shiptech_armor[sd->armor].tech_i, pi))) {
+        return DESIGN_ERR_ARMOR;
+    }
+    if (sd->hp != ((tbl_shiptech_hull[sd->hull].hits * tbl_shiptech_armor[sd->armor].armor) / 100)) {
+        return DESIGN_ERR_HP;
+    }
+    if (sd->man > sd->engine) {
+        return DESIGN_ERR_MAN;
+    }
+    if (check_space_cost) {
+        struct game_design_s gd;
+        gd.sd = *sd;
+        gd.player_i = pi;
+        memcpy(gd.percent, g->eto[pi].tech.percent, sizeof(gd.percent));
+        game_design_update_engines(&gd.sd);
+        if (gd.sd.engines != sd->engines) {
+            return DESIGN_ERR_ENGINES;
+        }
+        gd.sd.space = game_design_calc_space(&gd);
+        if (gd.sd.space != sd->space) {
+            return DESIGN_ERR_SPACE;
+        }
+        gd.sd.cost = game_design_calc_cost(&gd);
+        if (gd.sd.cost != sd->cost) {
+            return DESIGN_ERR_COST;
+        }
+    }
+    return DESIGN_ERR_NONE;
+}

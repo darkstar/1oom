@@ -22,10 +22,20 @@ struct game_s;
 
 extern int game_spy_esp_sub1(struct game_s *g, struct spy_esp_s *s, int a4, int a6);
 extern int game_spy_esp_sub2(struct game_s *g, struct spy_esp_s *s, int a4);
+extern void game_spy_esp_sub5(struct spy_esp_s *s, int r);
 extern void game_spy_build(struct game_s *g);
 extern void game_spy_report(struct game_s *g);
 extern void game_spy_turn(struct game_s *g, struct spy_turn_s *st);
+
 extern void game_spy_esp_human(struct game_s *g, struct spy_turn_s *st);
+extern int game_spy_server_steal_msg(struct game_s *g, player_id_t pi);
+extern int game_spy_steal_ask(struct game_s *g, player_id_t pi);
+extern int game_spy_stolen_show(struct game_s *g, player_id_t pi);
+
 extern void game_spy_sab_human(struct game_s *g);
+extern int game_spy_server_saba_msg(struct game_s *g, player_id_t pi);
+extern int game_spy_server_framesab_msg(struct game_s *g, player_id_t pi);
+extern int game_spy_sabotage_ask(struct game_s *g, player_id_t pi);
+extern int game_spy_sabotage_show(struct game_s *g, player_id_t pi);
 
 #endif

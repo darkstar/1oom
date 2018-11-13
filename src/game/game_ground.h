@@ -35,7 +35,7 @@ struct ground_s {
 };
 
 extern void game_ground_kill(struct ground_s *gr);
-extern const uint8_t *game_turn_ground_resolve_all(struct game_s *g);
-extern int game_turn_ground_show_all(struct game_s *g, const uint8_t *buf);
+extern int game_turn_ground_resolve_all(struct game_s *g);
+extern int game_turn_ground_show(struct game_s *g, player_id_t pi);
 
 #endif

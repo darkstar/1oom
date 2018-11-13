@@ -24,7 +24,7 @@ int ui_spy_steal(struct game_s *g, int spy, int target, uint8_t flags_field)
         { 0, NULL, NULL, NULL },
         { 0, NULL, NULL, NULL }
     };
-    int num = 0, v = -1;
+    int num = 0, v = TECH_FIELD_NUM;
     ui_switch_1(g, spy);
     {
         char rbuf[0x20], *p, c;
@@ -52,7 +52,7 @@ int ui_spy_steal(struct game_s *g, int spy, int target, uint8_t flags_field)
         }
     }
     if (num > 0) {
-        rl_in[num].value = -1;
+        rl_in[num].value = TECH_FIELD_NUM;
         rl_in[num].key = "Q";
         rl_in[num].str = "q";
         rl_in[num].display = "(quit)";

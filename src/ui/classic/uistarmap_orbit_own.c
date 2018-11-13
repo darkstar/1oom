@@ -160,7 +160,6 @@ void ui_starmap_orbit_own(struct game_s *g, player_id_t active_player)
     struct starmap_data_s d;
     const fleet_orbit_t *r;
     const shipcount_t *os;
-    const uint8_t shiptypes[NUM_SHIPDESIGNS] = { 0, 1, 2, 3, 4, 5 };
 
     d.g = g;
     d.api = active_player;
@@ -396,7 +395,7 @@ void ui_starmap_orbit_own(struct game_s *g, player_id_t active_player)
 do_accept:
             ui_sound_play_sfx_24();
             if ((p->within_frange[active_player] == 1) || ((p->within_frange[active_player] == 2) && d.oo.sn0.have_reserve_fuel)) {
-                game_send_fleet_from_orbit(g, active_player, d.oo.from, g->planet_focus_i[active_player], d.oo.ships, shiptypes, 6);
+                game_send_fleet_from_orbit_client(g, active_player, d.oo.from, g->planet_focus_i[active_player], d.oo.ships);
                 game_update_visibility(g);
             }
             if ((!ui_extra_enabled) || BOOLVEC_IS_CLEAR(r->visible, PLAYER_NUM)) {

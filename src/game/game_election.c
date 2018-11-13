@@ -9,11 +9,33 @@
 #include "game_ai.h"
 #include "game_aux.h"
 #include "game_diplo.h"
-#include "game_str.h"
+#include "game_endecode.h"
+#include "game_msg.h"
+#include "game_server.h"
 #include "game_tech.h"
-#include "ui.h"
+#include "log.h"
 
 /* -------------------------------------------------------------------------- */
+
+#define DEBUGLEVEL_ELECTION 3
+
+/* -------------------------------------------------------------------------- */
+
+static void game_election_msg_start(const struct game_s *g, player_id_t pi, const struct election_s *el)
+{
+    GAME_MSGO_EN_HDR(g, pi, GAME_MSG_ID_COUNCILS);
+    GAME_MSGO_EN_U16(g, pi, el->total_votes);
+    GAME_MSGO_EN_TBL_U8(g, pi, el->candidate, 2);
+    GAME_MSGO_EN_U8(g, pi, el->num);
+    for (int i = 0; i < el->num; ++i) {
+        uint8_t vpi;
+        vpi = el->tbl_ei[i];
+        GAME_MSGO_EN_U8(g, pi, vpi);
+        GAME_MSGO_EN_U8(g, pi, el->tbl_votes[vpi]);
+        GAME_MSGO_EN_U8(g, pi, el->voted[i]);
+    }
+    GAME_MSGO_EN_LEN(g, pi);
+}
 
 static void game_election_prepare(struct election_s *el)
 {
@@ -21,25 +43,27 @@ static void game_election_prepare(struct election_s *el)
     uint16_t tbl_votes[PLAYER_NUM];
     player_id_t tbl_ei[PLAYER_NUM];
     int num = 0, total_votes = 0;
+    for (player_id_t i = PLAYER_0; i < g->players; ++i) {
+        if (IS_ALIVE(g, i) && IS_AI(g, i)) {
+            el->tbl_ei[num++] = i;
+        }
+    }
+    el->num_ai = num;
     {
         bool found_human = false;
         for (player_id_t i = PLAYER_0; i < g->players; ++i) {
-            if (IS_ALIVE(g, i)) {
-                if (IS_HUMAN(g, i)) {
-                    el->last_human = i;
-                    if (!found_human) {
-                        found_human = true;
-                        el->first_human = i;
-                        continue;
-                    }
+            if (IS_ALIVE(g, i) && IS_HUMAN(g, i)) {
+                el->last_human = i;
+                if (!found_human) {
+                    found_human = true;
+                    el->first_human = i;
                 }
-                el->tbl_ei[num] = i;
-                ++num;
+                el->tbl_ei[num++] = i;
             }
         }
     }
-    el->tbl_ei[num] = el->first_human;
     el->num = num;
+    memset(el->voted, 3/*unknown*/, sizeof(el->voted));
     memset(tbl_votes, 0, sizeof(tbl_votes));
     for (int i = 0; i < g->galaxy_stars; ++i) {
         const planet_t *p = &(g->planet[i]);
@@ -80,28 +104,13 @@ static void game_election_prepare(struct election_s *el)
     el->flag_show_votes = false;
     el->got_votes[0] = 0;
     el->got_votes[1] = 0;
-    el->str = game_str_el_start;
     el->cur_i = PLAYER_NONE;
+    memset(el->voted, 3/*unknown*/, sizeof(el->voted));
 }
 
 static void game_election_accept(struct election_s *el)
 {
     struct game_s *g = el->g;
-    BOOLVEC_CLEAR(g->refuse, PLAYER_NUM);
-    for (player_id_t ph = el->first_human; ph <= el->last_human; ++ph) {
-        if (IS_AI(g, ph) || (!IS_ALIVE(g, ph))) {
-            continue;
-        }
-        if (el->first_human == el->last_human) {
-            el->str = game_str_el_accept;
-        } else {
-            sprintf(el->buf, "(%s) %s", g->emperor_names[ph], game_str_el_accept);
-            el->str = el->buf;
-        }
-        if (!ui_election_accept(el, ph)) {
-            BOOLVEC_SET1(g->refuse, ph);
-        }
-    }
     if (!BOOLVEC_IS_CLEAR(g->refuse, PLAYER_NUM)) {
         for (player_id_t p1 = PLAYER_0; p1 < g->players; ++p1) {
             if (BOOLVEC_IS1(g->refuse, p1)) {
@@ -121,124 +130,49 @@ static void game_election_accept(struct election_s *el)
                 game_diplo_set_treaty(g, p1, p2, TREATY_ALLIANCE);
             }
         }
-        for (int i = 0; i < el->num; ++i) {
-            if (el->tbl_ei[i] == el->candidate[1]) {
-                el->cur_i = i;
-                break;
-            }
-        }
-        {
-            int pos;
-            pos = sprintf(el->buf, "%s", game_str_el_sobeit);
-            if (g->end == GAME_END_WON_GOOD) {
+        if (BOOLVEC_IS1(g->refuse, g->winner)) {
+            if (g->winner == el->candidate[0]) {
                 g->winner = el->candidate[1];
-                sprintf(&el->buf[pos], " %s %s %s", game_str_el_emperor, g->emperor_names[g->winner], game_str_el_isnow);
+            } else {
+                g->winner = el->candidate[0];
             }
         }
         game_tech_final_war_share(g);
-        el->str = el->buf;
-        el->ui_delay = 3;
-        ui_election_show(el);
         g->end = GAME_END_FINAL_WAR;
     }
 }
 
 /* -------------------------------------------------------------------------- */
 
-const char *game_election_print_votes(uint16_t n, char *buf)
-{
-    if (n == 0) {
-        sprintf(buf, "%s %s", game_str_el_no, game_str_el_votes);
-    } else {
-        sprintf(buf, "%i %s", n, (n == 1) ? game_str_el_vote : game_str_el_votes);
-    }
-    return buf;
-}
-
 void game_election(struct game_s *g)
 {
-    struct election_s el[1];
-    char vbuf[0x20];
+    /* 1. For all AIs, vote
+       2. Send empires, candidates, votes to players
+       3. For all non-AIs, ask and wait for vote and send to players
+       4. Send election results
+       5. If got winner, wait for refusals
+       6. Send election end
+    */
+    struct election_s *el = &(g->evn.election);
+    struct turn_election_s *te = &(g->gaux->turn.election);
+    uint8_t winner;
+    te->pending = PLAYER_NONE;
+    te->voted = 3/*unknown*/;
+    BOOLVEC_CLEAR(te->answer, PLAYER_NUM);
     el->g = g;
-    el->buf = ui_get_strbuf();
     game_election_prepare(el);
-    ui_election_start(el);
-    el->ui_delay = 3;
-    ui_election_show(el);
-    sprintf(el->buf, "%s %s %s %s %s %s %s %s %s %s",
-            game_str_el_emperor, g->emperor_names[el->candidate[0]], game_str_el_ofthe, game_str_tbl_races[g->eto[el->candidate[0]].race],
-            game_str_el_and,
-            game_str_el_emperor, g->emperor_names[el->candidate[1]], game_str_el_ofthe, game_str_tbl_races[g->eto[el->candidate[1]].race],
-            game_str_el_nomin
-           );
-    el->str = el->buf;
-    el->ui_delay = 2;
-    ui_election_show(el);
-    el->flag_show_votes = true;
-    for (int i = 0; i < el->num; ++i) {
+    LOG_DEBUG((DEBUGLEVEL_ELECTION, "%s: tv:%i c:%i,%i n:%i", __func__, el->total_votes, el->candidate[0], el->candidate[1], el->num));
+    for (int i = 0; i < el->num_ai; ++i) {
         int votefor, n;
         player_id_t player;
-        el->cur_i = i;
         player = el->tbl_ei[i];
-        el->str = 0;
-        el->ui_delay = 2;
-        ui_election_delay(el, 5);
         n = el->tbl_votes[player];
-        if (IS_AI(g, player)) {
-            votefor = game_ai->vote(el, player);
-        } else {
-            sprintf(el->buf, "%s (%s%s", g->emperor_names[player], game_election_print_votes(n, vbuf), game_str_el_dots);
-            el->str = el->buf;
-            votefor = ui_election_vote(el, player);
-        }
+        votefor = game_ai->vote(el, player);
+        LOG_DEBUG((DEBUGLEVEL_ELECTION, " %i:%i:%i", player, n, votefor));
         if (n == 0) {
             votefor = 0;
         }
-        if (votefor == 0) {
-            sprintf(el->buf, "%s %s %s%s%s",
-                    game_str_el_abs1, game_str_tbl_races[g->eto[player].race], game_str_el_abs2,
-                    game_election_print_votes(n, vbuf), game_str_el_dots
-                   );
-            g->evn.voted[player] = PLAYER_NONE;
-            game_diplo_act(g, -6, player, el->candidate[1], 0, 0, 0);
-            game_diplo_act(g, -6, player, el->candidate[0], 0, 0, 0);
-        } else {
-            player_id_t pfor;
-            pfor = el->candidate[votefor - 1];
-            sprintf(el->buf, "%i %s %s %s, %s %s %s",
-                    n, (n == 1) ? game_str_el_vote : game_str_el_votes, game_str_el_for,
-                    g->emperor_names[pfor], game_str_el_emperor, game_str_el_ofthe,
-                    game_str_tbl_races[g->eto[pfor].race]
-                   );
-            el->got_votes[votefor - 1] += n;
-            g->evn.voted[player] = pfor;
-            game_diplo_act(g, 24, player, pfor, 0, 0, 0);
-            game_diplo_act(g, -12, player, el->candidate[(votefor - 1) ^ 1], 0, 0, 0);
-        }
-        el->str = el->buf;
-        el->ui_delay = 3;
-        ui_election_show(el);
-    }
-    {
-        int votefor, n;
-        player_id_t player;
-        player = el->first_human;
-        el->str = 0;
-        el->ui_delay = 2;
-        ui_election_delay(el, 5);
-        n = el->tbl_votes[player];
-        if (g->gaux->local_players > 1) {
-            el->cur_i = el->num;
-            sprintf(el->buf, "%s (%s%s", g->emperor_names[player], game_election_print_votes(n, vbuf), game_str_el_dots);
-        } else {
-            el->cur_i = PLAYER_NONE;
-            sprintf(el->buf, "%s%s%s", game_str_el_your, game_election_print_votes(n, vbuf), game_str_el_dots);
-        }
-        el->str = el->buf;
-        votefor = ui_election_vote(el, player);
-        if (n == 0) {
-            votefor = 0;
-        }
+        el->voted[i] = votefor;
         if (votefor == 0) {
             g->evn.voted[player] = PLAYER_NONE;
             game_diplo_act(g, -6, player, el->candidate[1], 0, 0, 0);
@@ -249,49 +183,118 @@ void game_election(struct game_s *g)
             pnot = el->candidate[(votefor - 1) ^ 1];
             el->got_votes[votefor - 1] += n;
             g->evn.voted[player] = pfor;
-            if (el->candidate[0] == player) {
-                game_diplo_act(g, 24, player, pfor, 0, 0, 0);
-                game_diplo_act(g, -12, player, pnot, 0, 0, 0);
-            } else {
-                game_diplo_act(g, 24, player, pfor, 80, 0, pfor);
-                game_diplo_act(g, -12, player, pnot, 79, 0, pfor);
-            }
+            game_diplo_act(g, 24, player, pfor, 0, 0, 0);
+            game_diplo_act(g, -12, player, pnot, 0, 0, 0);
         }
     }
-    {
-        int winner;
-        for (winner = 0; winner < 2; ++winner) {
-            if ((((el->total_votes + 1) * 2) / 3) <= el->got_votes[winner]) {
-                break;
-            }
+    LOG_DEBUG((DEBUGLEVEL_ELECTION, "\n"));
+    for (player_id_t pi = PLAYER_0; pi < g->players; ++pi) {
+        if (1
+          && IS_HUMAN(g, pi) && IS_ALIVE(g, pi)
+          && ((g->gaux->multiplayer != GAME_MULTIPLAYER_LOCAL) || (pi == el->first_human))
+        ) {
+            game_election_msg_start(g, pi, el);
         }
-        if (winner < 2) {
-            g->winner = el->candidate[winner];
-            sprintf(el->buf, "%s %i %s %s %s %s %s",
-                    game_str_el_chose1, g->year + YEAR_BASE, game_str_el_chose1,
-                    g->emperor_names[g->winner], game_str_el_ofthe, game_str_tbl_races[g->eto[g->winner].race],
-                    game_str_el_chose3 /* WASBUG MOO1 has the last period missing if second candidate won */
-                   );
-            el->str = el->buf;
-            el->cur_i = PLAYER_NONE;
-            if (IS_AI(g, g->winner) || (g->gaux->local_players > 1)) {
-                for (int i = 0; i < (el->num + 1); ++i) {
-                    if (el->tbl_ei[i] == g->winner) {
-                        el->cur_i = i;
-                        break;
-                    }
+    }
+    game_server_msgo_flush(g);
+    for (int i = el->num_ai; i < el->num;) {
+        player_id_t player;
+        el->cur_i = i;
+        player = el->tbl_ei[i];
+        if (te->pending != player) {
+            te->pending = player;
+            te->voted = 3/*unknown*/;
+            /* send q */
+            GAME_MSGO_EN_HDR(g, player, GAME_MSG_ID_VOTEQ);
+            GAME_MSGO_EN_LEN(g, player);
+            game_server_msgo_flush_player(g, player);
+        } else if (te->voted != 3/*unknown*/) {
+            int votefor, n;
+            votefor = te->voted;
+            te->voted = 3/*unknown*/;
+            te->pending = PLAYER_NONE;
+            n = el->tbl_votes[player];
+            if (n == 0) {
+                votefor = 0;
+            }
+            if (votefor == 0) {
+                g->evn.voted[player] = PLAYER_NONE;
+                game_diplo_act(g, -6, player, el->candidate[1], 0, 0, 0);
+                game_diplo_act(g, -6, player, el->candidate[0], 0, 0, 0);
+            } else {
+                player_id_t pfor, pnot;
+                pfor = el->candidate[votefor - 1];
+                pnot = el->candidate[(votefor - 1) ^ 1];
+                el->got_votes[votefor - 1] += n;
+                g->evn.voted[player] = pfor;
+                if (el->candidate[0] == player) {
+                    game_diplo_act(g, 24, player, pfor, 0, 0, 0);
+                    game_diplo_act(g, -12, player, pnot, 0, 0, 0);
+                } else {
+                    game_diplo_act(g, 24, player, pfor, 80, 0, pfor);
+                    game_diplo_act(g, -12, player, pnot, 79, 0, pfor);
                 }
             }
-            g->end = IS_HUMAN(g, g->winner) ? GAME_END_WON_GOOD : GAME_END_LOST_EXILE;
+            /* send voted */
+            for (player_id_t pi = PLAYER_0; pi < g->players; ++pi) {
+                if (1
+                  && IS_HUMAN(g, pi) && IS_ALIVE(g, pi)
+                  && ((g->gaux->multiplayer != GAME_MULTIPLAYER_LOCAL) || (pi == el->first_human))
+                ) {
+                    GAME_MSGO_EN_HDR(g, pi, GAME_MSG_ID_VOTED);
+                    GAME_MSGO_EN_U8(g, pi, i);
+                    GAME_MSGO_EN_U8(g, pi, votefor);
+                    GAME_MSGO_EN_LEN(g, pi);
+                }
+            }
+            game_server_msgo_flush(g);
+            /* next player */
+            ++i;
         } else {
-            el->str = game_str_el_neither;
-            el->cur_i = PLAYER_NONE;
+            game_server_msg_wait(g);
         }
-        el->ui_delay = 3;
-        ui_election_show(el);
     }
+    for (winner = 0; winner < 2; ++winner) {
+        if ((((el->total_votes + 1) * 2) / 3) <= el->got_votes[winner]) {
+            break;
+        }
+    }
+    if (winner < 2) {
+        g->winner = el->candidate[winner];
+        g->end = GAME_END_WON_GOOD;
+        BOOLVEC_CLEAR(g->refuse, PLAYER_NUM);
+        ++winner;
+    } else {
+        winner = 0;
+    }
+    for (player_id_t pi = PLAYER_0; pi < g->players; ++pi) {
+        if (IS_HUMAN(g, pi) && IS_ALIVE(g, pi)) {
+            GAME_MSGO_EN_HDR(g, pi, GAME_MSG_ID_COUNCILR);
+            GAME_MSGO_EN_U8(g, pi, winner);
+            GAME_MSGO_EN_LEN(g, pi);
+            if (winner) {
+                BOOLVEC_SET1(te->answer, pi);
+            }
+        }
+    }
+    game_server_msgo_flush(g);
     if (g->end != GAME_END_NONE) {
+        while (!BOOLVEC_IS_CLEAR(te->answer, PLAYER_NUM)) {
+            game_server_msg_wait(g);
+        }
         game_election_accept(el);
     }
-    ui_election_end(el);
+    for (player_id_t pi = PLAYER_0; pi < g->players; ++pi) {
+        if (1
+          && IS_HUMAN(g, pi) && IS_ALIVE(g, pi)
+          && ((g->gaux->multiplayer != GAME_MULTIPLAYER_LOCAL) || (pi == el->first_human))
+        ) {
+            uint8_t refused = BOOLVEC_IS_CLEAR(g->refuse, PLAYER_NUM) ? 0 : 1;
+            GAME_MSGO_EN_HDR(g, pi, GAME_MSG_ID_COUNCILE);
+            GAME_MSGO_EN_U8(g, pi, winner);
+            GAME_MSGO_EN_U8(g, pi, refused);
+            GAME_MSGO_EN_LEN(g, pi);
+        }
+    }
+    game_server_msgo_flush(g);
 }

@@ -166,7 +166,7 @@ ui_turn_action_t ui_game_turn(struct game_s *g, int *load_game_i_ptr, int pi)
                         }
                     }
                     if (ok) {
-                        game_design_add(g, pi, &gd.sd, true);
+                        game_design_add_client(g, pi, &gd.sd);
                     }
                     g->current_design[pi] = gd.sd;
                 }

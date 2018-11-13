@@ -432,7 +432,7 @@ static int game_save_decode_eto(const uint8_t *buf, int pos, empiretechorbit_t *
     return pos;
 }
 
-static int game_save_encode_sd(uint8_t *buf, int pos, const shipdesign_t *sd)
+int game_save_encode_sd(uint8_t *buf, int pos, const shipdesign_t *sd)
 {
     SG_1OOM_EN_TBL_U8(sd->name, SHIP_NAME_LEN);
     SG_1OOM_EN_U16(sd->cost);
@@ -453,7 +453,7 @@ static int game_save_encode_sd(uint8_t *buf, int pos, const shipdesign_t *sd)
     return pos;
 }
 
-static int game_save_decode_sd(const uint8_t *buf, int pos, shipdesign_t *sd)
+int game_save_decode_sd(const uint8_t *buf, int pos, shipdesign_t *sd)
 {
     SG_1OOM_DE_TBL_U8(sd->name, SHIP_NAME_LEN);
     SG_1OOM_DE_U16(sd->cost);
@@ -640,7 +640,9 @@ static int game_save_decode_evn(const uint8_t *buf, int pos, gameevents_t *ev, i
     return pos;
 }
 
-static int game_save_encode(uint8_t *buf, int buflen, const struct game_s *g, uint32_t version)
+/* -------------------------------------------------------------------------- */
+
+int game_save_encode(uint8_t *buf, int buflen, const struct game_s *g, uint32_t version)
 {
     int pos = 0;
     if (buflen < sizeof(*g)) {
@@ -709,7 +711,7 @@ static int game_save_encode(uint8_t *buf, int buflen, const struct game_s *g, ui
     return pos;
 }
 
-static int game_save_decode(const uint8_t *buf, int buflen, struct game_s *g, uint32_t version)
+int game_save_decode(const uint8_t *buf, int buflen, struct game_s *g, uint32_t version)
 {
     int pos = 0;
     if (buflen < 512) {
@@ -836,8 +838,6 @@ static int game_save_decode(const uint8_t *buf, int buflen, struct game_s *g, ui
     g->guardian_killer = PLAYER_NONE;
     return 0;
 }
-
-/* -------------------------------------------------------------------------- */
 
 static void game_save_make_header(uint8_t *buf, const char *savename, uint32_t version)
 {

@@ -17,6 +17,7 @@
 #include "game_strp.h"
 #include "game_turn.h"
 #include "game_tech.h"
+#include "game_view.h"
 #include "log.h"
 #include "options.h"
 #include "rnd.h"
@@ -63,6 +64,7 @@ static void game_start(struct game_s *g)
     game_update_within_range(g);
     game_update_visibility(g);
     game_update_have_reserve_fuel(g);
+    game_view_make_all(g);
 }
 
 static void game_stop(struct game_s *g)
@@ -524,7 +526,7 @@ int main_do(void)
     if (ui_late_init()) {
         return 1;
     }
-    game_aux_init(&game_aux, &game);
+    game_aux_init(&game_aux, &game, GAME_MULTIPLAYER_LOCAL, 0, 0);
     game_save_check_saves(game_aux.savenamebuf, game_aux.savenamebuflen);
     if ((game_opt_end.type != GAME_END_NONE) && (game_opt_end.varnum == 2)) {
         goto do_ending;
@@ -536,6 +538,7 @@ int main_do(void)
         struct game_new_options_s game_new_opts = GAME_NEW_OPTS_DEFAULT;
         main_menu_action_t main_menu_action;
         int load_game_i = 0;
+        player_id_t api;
 
         if (game_opt_new_game) {
             game_opt_new_game = false;
@@ -604,11 +607,15 @@ int main_do(void)
         main_menu_start_game:
         game_aux_start(&game_aux, &game);
         game_start(&game);
+        api = game.active_player;
         ui_game_start(&game);
         game_end.type = GAME_END_NONE;
         while ((game_end.type == GAME_END_NONE) || (game_end.type == GAME_END_FINAL_WAR)) {
-            for (; ((game_end.type == GAME_END_NONE) || (game_end.type == GAME_END_FINAL_WAR)) && (game.active_player < game.players); ++game.active_player) {
-                if (IS_AI(&game, game.active_player) || (!IS_ALIVE(&game, game.active_player))) {
+            for (; ((game_end.type == GAME_END_NONE) || (game_end.type == GAME_END_FINAL_WAR)) && (api < game.players); ++api) {
+                ui_turn_action_t act;
+                struct game_s *g;
+                g = game.gaux->gview[api];
+                if ((!g) || IS_AI(g, api) || (!IS_ALIVE(&game, game.active_player))) {
                     continue;
                 }
                 if (game_opt_next_turn) {
@@ -618,13 +625,15 @@ int main_do(void)
                 if (game_opt_save_quit) {
                     goto turn_act_quit;
                 }
-                switch (ui_game_turn(&game, &load_game_i, game.active_player)) {
+                act = ui_game_turn(g, &load_game_i, api);
+                switch (act) {
                     case UI_TURN_ACT_LOAD_GAME:
                         main_menu_action = MAIN_MENU_ACT_LOAD_GAME;
                         ui_game_end(&game);
                         goto main_menu_load_game;
                     case UI_TURN_ACT_QUIT_GAME:
                         turn_act_quit:
+                        game_view_update_from(&game, g, api);
                         if (game_save_do_save_i(GAME_SAVE_I_CONTINUE, "Continue", &game)) {
                             log_error("Game: could create continue save\n");
                         }
@@ -637,13 +646,14 @@ int main_do(void)
                         if (game_opt_year_save_enabled && game_save_do_save_year(NULL, &game)) {
                             log_error("Game: could create year save\n");
                         }
+                        game_end = game_turn_client_next(g);
                         break;
                 }
             }
             if (game_end.type != GAME_END_QUIT) {
                 game_end = game_turn_process(&game);
             }
-            game.active_player = PLAYER_0;
+            api = PLAYER_0;
         }
         ui_game_end(&game);
         do_ending:

@@ -781,7 +781,7 @@ void game_tech_get_new(struct game_s *g, player_id_t player, tech_field_t field,
     }
 }
 
-void game_tech_finish_new(struct game_s *g, player_id_t pi)
+uint8_t game_tech_finish_new(struct game_s *g, player_id_t pi)
 {
     empiretechorbit_t *e = &(g->eto[pi]);
     BOOLVEC_DECLARE(can_choose, TECH_FIELD_NUM);
@@ -800,10 +800,14 @@ void game_tech_finish_new(struct game_s *g, player_id_t pi)
         memset(xt->tech, 0, sizeof(xt->tech));
         if (BOOLVEC_IS1(can_choose, field)) {
             xt->num = game_tech_get_next_techs(g, pi, field, xt->tech);
+            if (xt->num == 0) {
+                BOOLVEC_SET0(can_choose, field);
+            }
         } else {
             xt->num = 0;
         }
     }
+    return can_choose[0]; /* HACK */
 }
 
 bool game_tech_can_choose(const struct game_s *g, player_id_t player, tech_field_t field)

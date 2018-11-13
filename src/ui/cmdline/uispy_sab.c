@@ -15,7 +15,7 @@
 
 struct ui_sab_data_s {
     player_id_t target;
-    ui_sabotage_t act;
+    sabotage_act_t act;
 };
 
 #define UI_SPY_SAB_MAKE(_act_, _planet_)    (((_act_) << 8) | (_planet_))
@@ -38,9 +38,9 @@ static int cmd_sab(struct game_s *g, int api, struct input_token_s *param, int n
 {
     struct ui_sab_data_s *sabdata = var;
     uint8_t planet = 0;
-    ui_sabotage_t act = sabdata->act;
+    sabotage_act_t act = sabdata->act;
     player_id_t target = sabdata->target;
-    if (act != UI_SABOTAGE_NONE) {
+    if (act != SABOTAGE_ACT_NONE) {
         const planet_t *p;
         planet = ui_planet_from_param(g, api, param);
         if (planet == PLANET_NONE) {
@@ -60,10 +60,10 @@ static const struct input_cmd_s * const cmdsptr_sab[];
 static const struct input_cmd_s cmds_sab[] = {
     { "?", NULL, "Help", 0, 0, 0, ui_cmd_help, (void *)cmdsptr_sab },
     { "l", NULL, "List target planets", 0, 0, 0, cmd_look_sab, 0 },
-    { "b", "PLANET", "Sabotage missile bases", 1, 1, 0, cmd_sab, (void *)UI_SABOTAGE_BASES },
-    { "f", "PLANET", "Sabotage factories", 1, 1, 0, cmd_sab, (void *)UI_SABOTAGE_FACT },
-    { "r", "PLANET", "Incite revolt", 1, 1, 0, cmd_sab, (void *)UI_SABOTAGE_REVOLT },
-    { "n", NULL, "Do nothing", 0, 0, 0, cmd_sab, (void *)UI_SABOTAGE_NONE },
+    { "b", "PLANET", "Sabotage missile bases", 1, 1, 0, cmd_sab, (void *)SABOTAGE_ACT_BASES },
+    { "f", "PLANET", "Sabotage factories", 1, 1, 0, cmd_sab, (void *)SABOTAGE_ACT_FACT },
+    { "r", "PLANET", "Incite revolt", 1, 1, 0, cmd_sab, (void *)SABOTAGE_ACT_REVOLT },
+    { "n", NULL, "Do nothing", 0, 0, 0, cmd_sab, (void *)SABOTAGE_ACT_NONE },
     { NULL, NULL, NULL, 0, 0, 0, NULL, 0 }
 };
 
@@ -74,7 +74,7 @@ static const struct input_cmd_s * const cmdsptr_sab[] = {
 
 /* -------------------------------------------------------------------------- */
 
-ui_sabotage_t ui_spy_sabotage_ask(struct game_s *g, int spy, int target, uint8_t *planetptr)
+int ui_spy_sabotage_ask(struct game_s *g, int spy, int target, uint8_t *planetptr)
 {
     struct ui_sab_data_s sabdata;
     sabdata.target = target;
@@ -92,23 +92,23 @@ ui_sabotage_t ui_spy_sabotage_ask(struct game_s *g, int spy, int target, uint8_t
                 if (cmd->handle == ui_cmd_help) {
                     var = cmd->var;
                 } else {
-                    sabdata.act = (ui_sabotage_t)cmd->var;
+                    sabdata.act = (sabotage_act_t)cmd->var;
                     var = &sabdata;
                 }
                 v = cmd->handle(g, spy, &ui_data.input.tok[1], ui_data.input.num - 1, var);
                 if ((v >= 0) && (cmd->handle == cmd_sab)) {
                     uint8_t planet = UI_SPY_SAB_PLANET(v);
-                    ui_sabotage_t act = UI_SPY_SAB_ACT(v);
+                    sabotage_act_t act = UI_SPY_SAB_ACT(v);
                     *planetptr = planet;
                     return act;
                 }
             }
         }
     }
-    return UI_SABOTAGE_NONE;
+    return SABOTAGE_ACT_NONE;
 }
 
-int ui_spy_sabotage_done(struct game_s *g, int pi, int spy, int target, ui_sabotage_t act, int other1, int other2, uint8_t planet, int snum)
+int ui_spy_sabotage_done(struct game_s *g, int pi, int spy, int target, int act, int other1, int other2, uint8_t planet, int snum)
 {
     const planet_t *p = &(g->planet[planet]);
     ui_switch_1(g, pi);
@@ -121,13 +121,13 @@ int ui_spy_sabotage_done(struct game_s *g, int pi, int spy, int target, ui_sabot
     if (snum > 0) {
         switch (act) {
             default:
-            case UI_SABOTAGE_FACT: /*0*/
+            case SABOTAGE_ACT_FACT: /*0*/
                 printf("%s %i %s", game_str_sb_destr, snum, (snum == 1) ? game_str_sb_fact2 : game_str_sb_facts);
                 break;
-            case UI_SABOTAGE_BASES: /*1*/
+            case SABOTAGE_ACT_BASES: /*1*/
                 printf("%s %i %s", game_str_sb_destr, snum, (snum == 1) ? game_str_sb_mbase : game_str_sb_mbases);
                 break;
-            case UI_SABOTAGE_REVOLT: /*2*/
+            case SABOTAGE_ACT_REVOLT: /*2*/
                 if (p->unrest == PLANET_UNREST_REBELLION) {
                     printf("%s", game_str_sb_increv);
                 } else {
@@ -140,17 +140,17 @@ int ui_spy_sabotage_done(struct game_s *g, int pi, int spy, int target, ui_sabot
         printf("%s ", game_str_sb_failed);
         switch (act) {
             default:
-            case UI_SABOTAGE_FACT: /*0*/
+            case SABOTAGE_ACT_FACT:
                 if (p->factories == 0) {
                     fputs(game_str_sb_nofact, stdout);
                 }
                 break;
-            case UI_SABOTAGE_BASES: /*1*/
+            case SABOTAGE_ACT_BASES:
                 if (p->missile_bases == 0) {
                     fputs(game_str_sb_nobases, stdout);
                 }
                 break;
-            case UI_SABOTAGE_REVOLT: /*2*/
+            case SABOTAGE_ACT_REVOLT:
                 fputs(game_str_sb_noinc, stdout); /* FIXME never happens? */
                 break;
         }

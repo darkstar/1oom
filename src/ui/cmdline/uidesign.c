@@ -831,7 +831,7 @@ int ui_cmd_design(struct game_s *g, int api, struct input_token_s *param, int nu
         }
     }
     if (ok) {
-        game_design_add(g, api, &gd.sd, true);
+        game_design_add_client(g, api, &gd.sd);
     }
     g->current_design[api] = gd.sd;
     return 0;

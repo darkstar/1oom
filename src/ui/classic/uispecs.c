@@ -218,7 +218,7 @@ void ui_specs_mustscrap(struct game_s *g, player_id_t active_player, int scrapi)
             flag_done = true;
         } else if (oi == oi_yes) {
             ui_sound_play_sfx_24();
-            game_design_scrap(g, active_player, scrapi, ui_data.flag_scrap_for_new_design);
+            game_design_scrap_client(g, active_player, scrapi, ui_data.flag_scrap_for_new_design);
             ui_data.ui_main_loop_action = ui_data.ui_main_loop_action_prev;
             flag_done = true;
         }

@@ -162,6 +162,13 @@ typedef enum {
 
 #define TECHSOURCE_CHOOSE   TECHSOURCE_AI_SPY
 
+typedef enum { /* MOO1 uses -1..2 */
+    SABOTAGE_ACT_NONE = 0,
+    SABOTAGE_ACT_FACT, /*1*/
+    SABOTAGE_ACT_BASES, /*2*/
+    SABOTAGE_ACT_REVOLT /*3*/
+} sabotage_act_t;
+
 typedef uint16_t shipcount_t;
 typedef uint32_t shipsum_t;
 
@@ -178,5 +185,7 @@ typedef uint32_t shipsum_t;
 #define TRANSPORT_MAX   100
 
 #define PLANETS_MAX 108
+
+#define MOVE_FRAMES_MAX 20
 
 #endif

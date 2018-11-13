@@ -146,7 +146,7 @@ int ui_spy_steal(struct game_s *g, int spy, int target, uint8_t flags_field)
     struct steal_data_s d;
     bool flag_done = false;
     int16_t oi_tbl_field[TECH_FIELD_NUM];
-    int selected = -1;
+    int selected = TECH_FIELD_NUM;
 
     ui_switch_1(g, spy);
     ui_sound_play_music(0xf);
@@ -182,7 +182,7 @@ int ui_spy_steal(struct game_s *g, int spy, int target, uint8_t flags_field)
         oi = uiobj_handle_input_cond();
         if (oi == UIOBJI_ESC) {
             ui_sound_play_sfx_24();
-            selected = -1;
+            selected = TECH_FIELD_NUM;
             flag_done = true;
         }
         for (int i = 0; i < TECH_FIELD_NUM; ++i) {

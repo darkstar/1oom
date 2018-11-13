@@ -155,12 +155,29 @@ typedef struct planet_s {
     uint16_t inbound[PLAYER_NUM];
     uint16_t total_inbound[PLAYER_NUM];
     player_id_t artifact_looter;
+    union {
+        struct {
+            player_id_t colonize;
+            uint8_t colony_ship;
+        } explore;
+        struct {
+            player_id_t bomber;
+            uint16_t popdmg;
+            uint16_t factdmg;
+            uint16_t biodmg;
+        } bomb;
+        struct {
+            BOOLVEC_DECLARE(destroyed, PLAYER_NUM);
+        } transport;
+    } turn;
 } planet_t;
 
+#define PLANET_LEFT 254
 #define PLANET_NONE 255
 
 struct game_s;
 
+extern void game_planet_colonize(struct game_s *g, uint8_t planet_i, player_id_t pi, int colony_ship);
 extern void game_planet_destroy(struct game_s *g, uint8_t planet_i, player_id_t attacker);
 extern uint8_t game_planet_get_random(struct game_s *g, player_id_t owner);
 extern void game_planet_adjust_percent(struct game_s *g, player_id_t owner, planet_slider_i_t si, uint8_t percent, int growth);
@@ -171,5 +188,11 @@ extern int game_planet_get_slider_text(const struct game_s *g, const planet_t *p
 extern int game_planet_get_slider_text_eco(const struct game_s *g, const planet_t *p, player_id_t player, bool flag_tenths, char *buf);
 extern void game_planet_govern(const struct game_s *g, planet_t *p);
 extern void game_planet_govern_all_owned_by(struct game_s *g, player_id_t owner);
+extern void game_planet_send_bc(struct game_s *g, player_id_t pi, uint8_t planet_i, uint32_t bc);
+extern bool game_planet_send_bc_client(struct game_s *g, player_id_t pi, uint8_t planet_i, uint32_t bc);
+extern int game_planet_server_send_bc_msg(struct game_s *g, player_id_t pi);
+extern void game_planet_scrap_bases(struct game_s *g, player_id_t pi, uint8_t planet_i, uint16_t num);
+extern bool game_planet_scrap_bases_client(struct game_s *g, player_id_t pi, uint8_t planet_i, uint16_t num);
+extern int game_planet_server_scrap_bases_msg(struct game_s *g, player_id_t pi);
 
 #endif

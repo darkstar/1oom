@@ -26,4 +26,11 @@ extern int game_save_do_save_i(int savei/*0..NUM_ALL_SAVES-1*/, const char *save
 extern int game_save_do_load_year(int year, char *savename, struct game_s *g);
 extern int game_save_do_save_year(const char *savename, const struct game_s *g);
 
+extern int game_save_encode(uint8_t *buf, int buflen, const struct game_s *g, uint32_t version);
+extern int game_save_decode(const uint8_t *buf, int buflen, struct game_s *g, uint32_t version);
+
+struct shipdesign_s;
+extern int game_save_encode_sd(uint8_t *buf, int pos, const struct shipdesign_s *sd);
+extern int game_save_decode_sd(const uint8_t *buf, int pos, struct shipdesign_s *sd);
+
 #endif

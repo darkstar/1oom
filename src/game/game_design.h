@@ -77,9 +77,33 @@ extern int game_design_build_tbl_fit_weapon(struct game_s *g, struct game_design
 extern int game_design_build_tbl_fit_special(struct game_s *g, struct game_design_s *gd, int8_t *buf, int sslot);
 extern void game_design_compact_slots(shipdesign_t *sd);
 extern void game_design_scrap(struct game_s *g, player_id_t player, int shipi, bool flag_for_new);
+extern bool game_design_scrap_client(struct game_s *g, player_id_t pi, int shipi, bool flag_for_new);
+extern int game_design_server_scrap_msg(struct game_s *g, player_id_t pi);
 extern bool game_design_add(struct game_s *g, player_id_t player, const shipdesign_t *sd, bool update_reserve_fuel);
+extern bool game_design_add_client(struct game_s *g, player_id_t player, const shipdesign_t *sd);
+extern int game_design_server_add_msg(struct game_s *g, player_id_t pi);
 extern void game_design_set_hp(shipdesign_t *sd);
 extern void game_design_update_haveflags(struct design_data_s *d);;
 extern void game_design_init_maxtech_haveflags(struct design_data_s *d);
+
+typedef enum {
+    DESIGN_ERR_NONE = 0,
+    DESIGN_ERR_HULL, /*1*/
+    DESIGN_ERR_LOOK, /*2*/
+    DESIGN_ERR_WEAP, /*3*/
+    DESIGN_ERR_ENGINE, /*4*/
+    DESIGN_ERR_SPECIAL, /*5*/
+    DESIGN_ERR_SHIELD, /*6*/
+    DESIGN_ERR_JAMMER, /*7*/
+    DESIGN_ERR_COMP, /*8*/
+    DESIGN_ERR_ARMOR, /*9*/
+    DESIGN_ERR_HP, /*10*/
+    DESIGN_ERR_MAN, /*11*/
+    DESIGN_ERR_ENGINES, /*12*/
+    DESIGN_ERR_SPACE, /*13*/
+    DESIGN_ERR_COST /*14*/
+} design_err_t;
+
+extern int game_design_check(const struct game_s *g, player_id_t pi, const shipdesign_t *sd, bool check_space_cost);
 
 #endif

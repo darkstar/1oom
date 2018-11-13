@@ -131,21 +131,14 @@ extern bool ui_battle_ai_post(const struct battle_s *bt);
 extern int ui_spy_steal(struct game_s *g, int spy, int target, uint8_t flags_field);
 extern void ui_spy_stolen(struct game_s *g, int pi, int spy, int field, uint8_t tech);
 
-typedef enum {
-    UI_SABOTAGE_FACT, /*0*/
-    UI_SABOTAGE_BASES, /*1*/
-    UI_SABOTAGE_REVOLT, /*2*/
-    UI_SABOTAGE_NONE /*-1*/
-} ui_sabotage_t;
-
-extern ui_sabotage_t ui_spy_sabotage_ask(struct game_s *g, int spy, int target, uint8_t *planetptr);
-extern int ui_spy_sabotage_done(struct game_s *g, int pi, int spy, int target, ui_sabotage_t act, int other1, int other2, uint8_t planet, int snum);
+extern int ui_spy_sabotage_ask(struct game_s *g, int spy, int target, uint8_t *planetptr);
+extern int ui_spy_sabotage_done(struct game_s *g, int pi, int spy, int target, int act, int other1, int other2, uint8_t planet, int snum);
 
 extern void ui_newtech(struct game_s *g, int pi);
 
 extern bool ui_explore(struct game_s *g, int pi, uint8_t planet_i, bool by_scanner, bool flag_colony_ship);
 extern bool ui_bomb_ask(struct game_s *g, int pi, uint8_t planet_i, int pop_inbound);
-extern void ui_bomb_show(struct game_s *g, int pi, int attacker_i, int owner_i, uint8_t planet_i, int popdmg, int factdmg, bool play_music, bool hide_other);
+extern void ui_bomb_show(struct game_s *g, int pi, int attacker_i, int owner_i, uint8_t planet_i, int popdmg, int factdmg, bool play_music);
 
 extern void ui_turn_msg(struct game_s *g, int pi, const char *str);
 

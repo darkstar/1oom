@@ -325,10 +325,8 @@ static void ui_planets_transfer(struct planets_data_s *d)
         } else if (oi == oi_accept) {
             ui_sound_play_sfx_24();
             v = (d->amount_trans * allreserve) / 100;
-            p->reserve += v;
-            allreserve -= v;
-            SETMAX(allreserve, 0);
-            g->eto[d->api].reserve_bc = allreserve;
+            game_planet_send_bc_client(g, d->api, d->planet_i, v);
+            allreserve = g->eto[d->api].reserve_bc;
             flag_done = true;
         } else if (oi == oi_minus) {
             ui_sound_play_sfx_24();

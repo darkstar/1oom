@@ -252,7 +252,7 @@ void ui_starmap_enroute(struct game_s *g, player_id_t active_player)
 do_accept:
             ui_sound_play_sfx_24();
             if (p->within_frange[active_player] != 0) {
-                game_fleet_redirect(g, r, d.en.pon, g->planet_focus_i[active_player]);
+                game_fleet_redirect_client(g, r, d.en.pon, g->planet_focus_i[active_player]);
                 flag_done = true;
             }
             ui_data.ui_main_loop_action = UI_MAIN_LOOP_STARMAP;

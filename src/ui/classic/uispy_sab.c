@@ -33,7 +33,7 @@ struct sabotage_data_s {
     player_id_t target;
     player_id_t other1;
     player_id_t other2;
-    ui_sabotage_t act;
+    sabotage_act_t act;
     int snum;
     uint8_t planet;
     uint8_t *gfx_saboback;
@@ -165,13 +165,13 @@ static void sabotage_done_draw_cb(void *vptr)
     /*set_limits(228, 110, 309, 158);*/
     lbxgfx_draw_frame_offs(228, 70, d->gfx_colony, 228, 110, 309, 158, UI_SCREEN_W, ui_scale);
     switch (d->act) {
-        case UI_SABOTAGE_FACT: /*0*/
+        case SABOTAGE_ACT_FACT:
             sabotage_draw_anim(d->gfx_ind_expl, (d->snum > 0), 11);
             break;
-        case UI_SABOTAGE_BASES: /*1*/
+        case SABOTAGE_ACT_BASES:
             sabotage_draw_anim(d->gfx_basexplo, (d->snum > 0), 5);
             break;
-        case UI_SABOTAGE_REVOLT: /*2*/
+        case SABOTAGE_ACT_REVOLT:
             sabotage_draw_anim(d->gfx_ind_expl, false, 100);
             break;
         default:
@@ -189,13 +189,13 @@ static void sabotage_done_draw_cb(void *vptr)
     if (d->snum > 0) {
         switch (d->act) {
             default:
-            case UI_SABOTAGE_FACT: /*0*/
+            case SABOTAGE_ACT_FACT:
                 sprintf(&buf[pos], "%s %i %s", game_str_sb_destr, d->snum, (d->snum == 1) ? game_str_sb_fact2 : game_str_sb_facts);
                 break;
-            case UI_SABOTAGE_BASES: /*1*/
+            case SABOTAGE_ACT_BASES:
                 sprintf(&buf[pos], "%s %i %s", game_str_sb_destr, d->snum, (d->snum == 1) ? game_str_sb_mbase : game_str_sb_mbases);
                 break;
-            case UI_SABOTAGE_REVOLT: /*2*/
+            case SABOTAGE_ACT_REVOLT:
                 if (p->unrest == PLANET_UNREST_REBELLION) {
                     sprintf(&buf[pos], "%s", game_str_sb_increv);
                 } else {
@@ -209,17 +209,17 @@ static void sabotage_done_draw_cb(void *vptr)
         sprintf(&buf[pos], "%s", game_str_sb_failed);
         switch (d->act) {
             default:
-            case UI_SABOTAGE_FACT: /*0*/
+            case SABOTAGE_ACT_FACT:
                 if (p->factories == 0) {
                     sprintf(buf, "%s", game_str_sb_nofact);
                 }
                 break;
-            case UI_SABOTAGE_BASES: /*1*/
+            case SABOTAGE_ACT_BASES:
                 if (p->missile_bases == 0) {
                     sprintf(buf, "%s", game_str_sb_nobases);
                 }
                 break;
-            case UI_SABOTAGE_REVOLT: /*2*/
+            case SABOTAGE_ACT_REVOLT:
                 strcat(buf, game_str_sb_noinc); /* FIXME never happens? */
                 break;
         }
@@ -252,12 +252,12 @@ static void sabotage_done_draw_cb(void *vptr)
 
 /* -------------------------------------------------------------------------- */
 
-ui_sabotage_t ui_spy_sabotage_ask(struct game_s *g, int spy, int target, uint8_t *planetptr)
+int ui_spy_sabotage_ask(struct game_s *g, int spy, int target, uint8_t *planetptr)
 {
     struct sabotage_data_s d;
     int16_t oi_bases, oi_ind, oi_revolt, oi_planet[PLANETS_MAX];
     bool flag_done = false;
-    ui_sabotage_t action = UI_SABOTAGE_NONE;
+    sabotage_act_t action = SABOTAGE_ACT_NONE;
     ui_switch_1(g, spy);
     d.g = g;
     d.api = spy;
@@ -273,7 +273,7 @@ ui_sabotage_t ui_spy_sabotage_ask(struct game_s *g, int spy, int target, uint8_t
     }
     if (d.planet == PLANET_NONE) {
         *planetptr = 0;
-        return UI_SABOTAGE_NONE;
+        return SABOTAGE_ACT_NONE;
     }
     sabotage_load_data(&d);
     ui_sound_play_music(0x10);
@@ -292,19 +292,19 @@ ui_sabotage_t ui_spy_sabotage_ask(struct game_s *g, int spy, int target, uint8_t
         }
         if (oi == UIOBJI_ESC) {
             flag_done = true;
-            action = UI_SABOTAGE_NONE;
+            action = SABOTAGE_ACT_NONE;
         }
         if (oi == oi_bases) {
             flag_done = true;
-            action = UI_SABOTAGE_BASES;
+            action = SABOTAGE_ACT_BASES;
         }
         if (oi == oi_ind) {
             flag_done = true;
-            action = UI_SABOTAGE_FACT;
+            action = SABOTAGE_ACT_FACT;
         }
         if (oi == oi_revolt) {
             flag_done = true;
-            action = UI_SABOTAGE_REVOLT;
+            action = SABOTAGE_ACT_REVOLT;
         }
         for (int i = 0; i < g->galaxy_stars; ++i) {
             if (oi == oi_planet[i]) {
@@ -345,7 +345,7 @@ ui_sabotage_t ui_spy_sabotage_ask(struct game_s *g, int spy, int target, uint8_t
     return action;
 }
 
-int ui_spy_sabotage_done(struct game_s *g, int pi, int spy, int target, ui_sabotage_t act, int other1, int other2, uint8_t planet, int snum)
+int ui_spy_sabotage_done(struct game_s *g, int pi, int spy, int target, int act, int other1, int other2, uint8_t planet, int snum)
 {
     struct sabotage_data_s d;
     int16_t oi_cont, oi_cont2, oi_other1, oi_other2;

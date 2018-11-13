@@ -7,9 +7,9 @@
 #include "comp.h"
 #include "game.h"
 #include "game_aux.h"
-#include "game_diplo.h"
 #include "game_planet.h"
 #include "game_misc.h"
+#include "game_newtech.h"
 #include "game_num.h"
 #include "game_str.h"
 #include "game_tech.h"
@@ -46,6 +46,7 @@ struct newtech_data_s {
     uint8_t *gfx_eco_chng4;
     uint8_t *gfx_robo_but;
     newtech_t nt;
+    uint8_t newtech_i;
     uint8_t music_i;
     int cur_source;
     uint8_t anim;
@@ -210,7 +211,7 @@ static void ui_newtech_choose_next(struct newtech_data_s *d)
     /*sel = */uiobj_select_from_list1(156, 41, 148, "", nptr, &d->selected, cond, 1, 0x60, true);
     ui_sound_play_sfx_24();
     ui_delay_prepare();
-    game_tech_start_next(d->g, d->api, d->nt.field, d->tbl_tech[d->selected]);
+    game_turn_newtech_choose_next(d->g, d->api, d->nt.field, d->tbl_tech[d->selected]);
     ui_delay_ticks_or_click(2);
     uiobj_unset_callback();
 }
@@ -401,6 +402,8 @@ again:
     } else {
         bool flag_done;
         int16_t oi_ok, oi_o1, oi_o2;
+        player_id_t victim;
+        victim = PLAYER_NONE;
         oi_ok = UIOBJI_INVALID;
         oi_o1 = UIOBJI_INVALID;
         oi_o2 = UIOBJI_INVALID;
@@ -421,17 +424,18 @@ again:
                 flag_done = true;
             }
             if ((oi == oi_o1) || (oi == oi_o2)) {
-                player_id_t framed = (oi == oi_o1) ? d->nt.other1 : d->nt.other2;
                 flag_done = true;
                 ui_sound_play_sfx_24();
-                g->evn.stolen_spy[d->nt.stolen_from][d->api] = framed;
-                game_diplo_esp_frame(g, framed, d->nt.stolen_from);
+                victim = (oi == oi_o1) ? d->nt.other1 : d->nt.other2;
             }
             newtech_draw_cb1(d);
             ui_draw_finish();
             ui_delay_ticks_or_click(3);
         }
         uiobj_table_clear();
+        if (d->nt.frame) {
+            game_turn_newtech_frame(g, d->api, d->newtech_i, victim);
+        }
         if (flag_dialog) {
             ui_newtech_adjust(d);
         }
@@ -466,6 +470,7 @@ void ui_newtech(struct game_s *g, int pi)
 
     newtech_load_data(&d);
     for (int i = 0; i < g->evn.newtech[pi].num; ++i) {
+        d.newtech_i = i;
         d.nt = g->evn.newtech[pi].d[i];
         if (!flag_copybuf) {
             flag_copybuf = true;

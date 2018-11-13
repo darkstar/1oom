@@ -102,10 +102,10 @@ void ui_basescrap(struct game_s *g, player_id_t active_player)
             int n;
             ui_sound_play_sfx_24();
             n = (p->missile_bases * d.slider_var) / 100;
-            p->missile_bases -= n;
-            g->eto[active_player].reserve_bc += (n * game_get_base_cost(g, active_player)) / 4;
+            if (n != 0) {
+                game_planet_scrap_bases_client(g, active_player, g->planet_focus_i[active_player], n);
+            }
             flag_done = true;
-            SETMAX(p->missile_bases, 0);
         } else if (oi == oi_minus) {
             d.slider_var -= 2;
             SETMAX(d.slider_var, 0);

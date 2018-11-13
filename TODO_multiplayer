@@ -1,0 +1,63 @@
+Plans for 1oom network multiplayer
+===================================
+
+The model is client/server (C/S). This needs a massive rewrite of src/game/.
+
+Goals:
+- single/multiplayer client in same executable
+- network server in separate executable
+- networking is optional, checked in configure
+- network client does not require (explicit) multithreading
+- minimal code duplication
+
+The local/single player mode will use something very close to the newtwork
+multiplayer mode, but without any network code. This is accomplised by
+having the client embed the server code sans networking and substituting
+the networking functions with memcpy. This requires that the game logic
+functions on both sides of C/S work as both asynchronous and coroutine-like.
+Anything less would require quite a lot of code duplication and result in
+(even more) lacking testing.
+
+The client and server update each other's state by sending messages to each
+other. The messages are listed in doc/protocol.txt.
+
+The networking code is optional. The required functions (socket, connect, ...)
+are checked in configure.
+
+The server will be a standalone console application 1oom_server.
+It links to libgameserver while the clients link to and libgameclient
+(which contains most of libgameserver).
+
+The server requires some LBX files, at least firing and research.
+
+Clients connect using -connect ADDR.
+
+-connect and -file conflict until game_num_set_defaults is implemented.
+
+The server sends any PBX files after connecting.
+
+The server sends the clients only what they are allowed to know.
+The censoring is handled in game_view.c.
+This may have to be relaxed slightly in battles for practical purposes.
+
+TODO:
+- C/S rewrites
+    - space battle
+    - audience
+        - player-player
+            - translate proposals to AI-like messages
+            - incoming proposal lights up Races button, answer using Audience
+            - one proposal (plus possible sweetening) per audience
+            - Ignore button?
+        - player-AI
+            - one diplomat per empire? / concurrent audiences with multiple players?
+        - AI-player
+            - inform of broken alliances etc immediately or during turn processing?
+    - stats
+        - ask from server, otherwise client would need to know too much
+    - news
+    - end
+- server itself
+- networking code
+- game lobby?
+- chat?

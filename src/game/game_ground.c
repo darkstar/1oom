@@ -1,8 +1,5 @@
 #include "config.h"
 
-#include <stdio.h>
-#include <string.h>
-
 #include "game_ground.h"
 #include "bits.h"
 #include "boolvec.h"
@@ -10,29 +7,22 @@
 #include "game.h"
 #include "game_ai.h"
 #include "game_aux.h"
-#include "game_endecode.h"
-#include "game_misc.h"
+#include "game_msg.h"
 #include "game_num.h"
+#include "game_server.h"
 #include "game_shiptech.h"
 #include "game_spy.h"
-#include "game_str.h"
 #include "game_tech.h"
 #include "log.h"
 #include "rnd.h"
 #include "types.h"
-#include "ui.h"
-#include "util.h"
-#include "util_math.h"
 
 /* -------------------------------------------------------------------------- */
 
 static void game_ground_resolve_init(struct game_s *g, struct ground_s *gr)
 {
     gr->seed = g->seed;
-    {
-        const planet_t *p = &(g->planet[gr->planet_i]);
-        gr->fact = p->factories;
-    }
+    gr->fact = g->planet[gr->planet_i].factories;
     for (int i = 0; i < 2; ++i) {
         const empiretechorbit_t *e = &(g->eto[gr->s[i].player]);
         const shipresearch_t *srd = &(g->srd[gr->s[i].player]);
@@ -98,115 +88,45 @@ static void game_ground_resolve_init(struct game_s *g, struct ground_s *gr)
     }
 }
 
-static void game_ground_show_init(struct game_s *g, struct ground_s *gr)
+static void game_ground_encode_first(struct game_s *g, player_id_t pi)
 {
+    GAME_MSGO_EN_HDR(g, pi, GAME_MSG_ID_GROUND);
+}
+
+static void game_ground_encode_start(struct game_s *g, player_id_t pi, const struct ground_s *gr)
+{
+    GAME_MSGO_EN_U8(g, pi, gr->planet_i);
+    GAME_MSGO_EN_U8(g, pi, gr->s[0].player);
+    GAME_MSGO_EN_U8(g, pi, gr->s[1].player);
+    GAME_MSGO_EN_U8(g, pi, gr->flag_swap | (gr->flag_rebel ? 2 : 0));
+    GAME_MSGO_EN_U32(g, pi, gr->seed);
+    GAME_MSGO_EN_U16(g, pi, gr->inbound);
+    GAME_MSGO_EN_U16(g, pi, gr->total_inbound);
+    GAME_MSGO_EN_U16(g, pi, gr->fact);
     for (int i = 0; i < 2; ++i) {
-        char strbuf[0x40];
-        uint8_t besti;
-        gr->s[i].human = IS_HUMAN(g, gr->s[i].player);
-        gr->s[i].pop2 = gr->s[i].pop1;
-        gr->s[i].strnum = 1;
-        strcpy(strbuf, *tbl_shiptech_armor[gr->s[i].armori * 2].nameptr);
-        util_str_tolower(&strbuf[1]);
-        sprintf(gr->s[i].str[0], "%s ", strbuf);
-        besti = gr->s[i].suiti;
-        if (besti == 0) {
-            strcat(gr->s[i].str[0], game_str_gr_carmor);
-        } else {
-            game_tech_get_name(g->gaux, TECH_FIELD_CONSTRUCTION, besti, strbuf);
-            strcat(gr->s[i].str[0], strbuf);
-        }
-        besti = gr->s[i].shieldi;
-        if (besti != 0) {
-            game_tech_get_name(g->gaux, TECH_FIELD_FORCE_FIELD, besti, gr->s[i].str[1]);
-            gr->s[i].strnum = 2;
-        }
-        besti = gr->s[i].weapi;
-        if (besti != 0) {
-            game_tech_get_name(g->gaux, TECH_FIELD_WEAPON, besti, gr->s[i].str[gr->s[i].strnum++]);
-        }
+        GAME_MSGO_EN_U16(g, pi, gr->s[i].force);
+        GAME_MSGO_EN_U16(g, pi, gr->s[i].pop1);
+        GAME_MSGO_EN_U8(g, pi, gr->s[i].armori);
+        GAME_MSGO_EN_U8(g, pi, gr->s[i].suiti);
+        GAME_MSGO_EN_U8(g, pi, gr->s[i].shieldi);
+        GAME_MSGO_EN_U8(g, pi, gr->s[i].weapi);
     }
 }
 
-static int game_ground_encode_start(const struct ground_s *gr, uint8_t *buf, int pos)
+static void game_ground_encode_post(struct game_s *g, player_id_t pi, const struct ground_s *gr)
 {
-    SG_1OOM_EN_U8(gr->planet_i);
-    SG_1OOM_EN_U8(gr->s[0].player);
-    SG_1OOM_EN_U8(gr->s[1].player);
-    SG_1OOM_EN_U8(gr->flag_swap | (gr->flag_rebel ? 2 : 0));
-    SG_1OOM_EN_U32(gr->seed);
-    SG_1OOM_EN_U16(gr->inbound);
-    SG_1OOM_EN_U16(gr->total_inbound);
-    SG_1OOM_EN_U16(gr->fact);
-    for (int i = 0; i < 2; ++i) {
-        SG_1OOM_EN_U16(gr->s[i].force);
-        SG_1OOM_EN_U16(gr->s[i].pop1);
-        SG_1OOM_EN_U8(gr->s[i].armori);
-        SG_1OOM_EN_U8(gr->s[i].suiti);
-        SG_1OOM_EN_U8(gr->s[i].shieldi);
-        SG_1OOM_EN_U8(gr->s[i].weapi);
-    }
-    return pos;
-}
-
-static int game_ground_encode_end(const struct ground_s *gr, uint8_t *buf, int pos)
-{
+    GAME_MSGO_EN_U16(g, pi, gr->s[0].pop1);
+    GAME_MSGO_EN_U16(g, pi, gr->s[1].pop1);
     for (int i = 0; i < TECH_SPY_MAX; ++i) {
-        SG_1OOM_EN_U8(gr->got[i].tech);
-        SG_1OOM_EN_U8(gr->got[i].field);
+        GAME_MSGO_EN_U8(g, pi, gr->got[i].tech);
+        GAME_MSGO_EN_U8(g, pi, gr->got[i].field);
     }
-    return pos;
 }
 
-static int game_ground_decode(struct ground_s *gr, const uint8_t *buf, int pos)
+static void game_ground_encode_end(struct game_s *g, player_id_t pi)
 {
-    {
-        uint8_t v;
-        SG_1OOM_DE_U8(v);
-        if (v == 0xff) {
-            return 0;
-        }
-        gr->planet_i = v;
-    }
-    SG_1OOM_DE_U8(gr->s[0].player);
-    SG_1OOM_DE_U8(gr->s[1].player);
-    {
-        uint8_t v;
-        SG_1OOM_DE_U8(v);
-        gr->flag_swap = (v & 1) != 0;
-        gr->flag_rebel = (v & 2) != 0;
-    }
-    SG_1OOM_DE_U32(gr->seed);
-    SG_1OOM_DE_U16(gr->inbound);
-    SG_1OOM_DE_U16(gr->total_inbound);
-    SG_1OOM_DE_U16(gr->fact);
-    for (int i = 0; i < 2; ++i) {
-        SG_1OOM_DE_U16(gr->s[i].force);
-        SG_1OOM_DE_U16(gr->s[i].pop1);
-        SG_1OOM_DE_U8(gr->s[i].armori);
-        SG_1OOM_DE_U8(gr->s[i].suiti);
-        SG_1OOM_DE_U8(gr->s[i].shieldi);
-        SG_1OOM_DE_U8(gr->s[i].weapi);
-    }
-    {
-        int num = 0;
-        for (int i = 0; i < TECH_SPY_MAX; ++i) {
-            uint8_t t;
-            SG_1OOM_DE_U8(t);
-            gr->got[i].tech = t;
-            if (t != 0) {
-                ++num;
-            }
-            SG_1OOM_DE_U8(gr->got[i].field);
-        }
-        gr->techchance = num;
-    }
-    return pos;
-}
-
-static inline uint8_t *game_ground_get_buf(struct game_s *g)
-{
-    return g->gaux->savebuf;    /* unused during turn processing, large enough for ground data */
+    GAME_MSGO_EN_U8(g, pi, 0xff);
+    GAME_MSGO_EN_LEN(g, pi);
 }
 
 static void game_ground_finish(struct game_s *g, struct ground_s *gr)
@@ -215,6 +135,11 @@ static void game_ground_finish(struct game_s *g, struct ground_s *gr)
     struct spy_esp_s s[1];
     g->seed = gr->seed;
     gr->techchance = 0;
+    if (gr->flag_swap) {
+        int t;
+        t = gr->s[0].pop1; gr->s[0].pop1 = gr->s[1].pop1; gr->s[1].pop1 = t;
+        t = gr->s[0].player; gr->s[0].player = gr->s[1].player; gr->s[1].player = t;
+    }
     if (gr->s[0].pop1 > 0) {
         if (gr->flag_rebel) {
             p->unrest = PLANET_UNREST_RESOLVED;
@@ -258,6 +183,11 @@ static void game_ground_finish(struct game_s *g, struct ground_s *gr)
         }
     }
     SETMIN(p->pop, p->max_pop3);
+    if (gr->flag_swap) {
+        int t;
+        t = gr->s[0].pop1; gr->s[0].pop1 = gr->s[1].pop1; gr->s[1].pop1 = t;
+        t = gr->s[0].player; gr->s[0].player = gr->s[1].player; gr->s[1].player = t;
+    }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -276,11 +206,11 @@ void game_ground_kill(struct ground_s *gr)
     --gr->s[death].pop1;
 }
 
-const uint8_t *game_turn_ground_resolve_all(struct game_s *g)
+int game_turn_ground_resolve_all(struct game_s *g)
 {
     struct ground_s gr[1];
-    uint8_t *buf = game_ground_get_buf(g);
-    int pos = 0;
+    BOOLVEC_DECLARE(msg_started, PLAYER_NUM);
+    BOOLVEC_CLEAR(msg_started, PLAYER_NUM);
     gr->seed = g->seed;
     for (int pli = 0; pli < g->galaxy_stars; ++pli) {
         planet_t *p = &(g->planet[pli]);
@@ -309,20 +239,25 @@ const uint8_t *game_turn_ground_resolve_all(struct game_s *g)
                     }
                     game_ground_resolve_init(g, gr);
                     if ((gr->s[0].pop1 != 0) && (gr->s[1].pop1 != 0)) {
-                        if (gr->s[0].human || gr->s[1].human) {
-                            pos = game_ground_encode_start(gr, buf, pos);
+                        for (int k = 0; k < 2; ++k) {
+                            player_id_t pi;
+                            pi = gr->s[k].player;
+                            if (gr->s[k].human && ((k == 0) || (gr->s[0].player != gr->s[1].player))) {
+                                if (BOOLVEC_IS0(msg_started, pi)) {
+                                    BOOLVEC_SET1(msg_started, pi);
+                                    game_ground_encode_first(g, pi);
+                                }
+                                game_ground_encode_start(g, pi, gr);
+                            }
                         }
                         while ((gr->s[0].pop1 != 0) && (gr->s[1].pop1 != 0)) {
                             game_ground_kill(gr);
                         }
-                        if (gr->flag_swap) {
-                            int t;
-                            t = gr->s[0].pop1; gr->s[0].pop1 = gr->s[1].pop1; gr->s[1].pop1 = t;
-                            t = gr->s[0].player; gr->s[0].player = gr->s[1].player; gr->s[1].player = t;
-                        }
                         game_ground_finish(g, gr);
-                        if (gr->s[0].human || gr->s[1].human) {
-                            pos = game_ground_encode_end(gr, buf, pos);
+                        for (int k = 0; k < 2; ++k) {
+                            if (gr->s[k].human && ((k == 0) || (gr->s[0].player != gr->s[1].player))) {
+                                game_ground_encode_post(g, gr->s[k].player, gr);
+                            }
                         }
                         pop_planet -= gr->s[1].pop1;
                         SETMAX(pop_planet, 1);
@@ -333,18 +268,13 @@ const uint8_t *game_turn_ground_resolve_all(struct game_s *g)
             }
         }
     }
-    SG_1OOM_EN_U8(0xff);
-    return buf;
-}
-
-int game_turn_ground_show_all(struct game_s *g, const uint8_t *buf)
-{
-    struct ground_s gr[1];
-    int pos = 0;
-    /* TODO reorder for minimum player switching */
-    while ((pos = game_ground_decode(gr, buf, pos)) > 0) {
-        game_ground_show_init(g, gr);
-        ui_ground(g, gr);
+    if (!BOOLVEC_IS_CLEAR(msg_started, PLAYER_NUM)) {
+        for (player_id_t pi = 0; pi < g->players; ++pi) {
+            if (BOOLVEC_IS1(msg_started, pi)) {
+                game_ground_encode_end(g, pi);
+            }
+        }
+        game_server_msgo_flush(g);
     }
-    return (pos == 0) ? 0 : -1;
+    return 0;
 }

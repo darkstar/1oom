@@ -132,13 +132,6 @@ static void game_battle_post(struct game_s *g, int loser, int winner, uint8_t fr
         const planet_t *pf = &g->planet[from];
         uint8_t dest = PLANET_NONE;
         int mindist = 10000;
-        shipcount_t ships[NUM_SHIPDESIGNS];
-        uint8_t shiptypes[NUM_SHIPDESIGNS];
-        uint8_t numtypes = e->shipdesigns_num;
-        for (int i = 0; i < numtypes; ++i) {
-            shiptypes[i] = i;
-            ships[i] = o->ships[i];
-        }
         for (int i = 0; i < g->galaxy_stars; ++i) {
             const planet_t *pt = &g->planet[i];
             if ((i != from) && (pt->owner == loser)) {
@@ -151,7 +144,7 @@ static void game_battle_post(struct game_s *g, int loser, int winner, uint8_t fr
             }
         }
         if ((dest != PLANET_NONE) /*&& (numtypes > 0)*/) {
-            game_send_fleet_retreat(g, loser, from, dest, ships, shiptypes, numtypes);
+            game_send_fleet_retreat(g, loser, from, dest, o->ships);
         }
         for (int i = 0; i < NUM_SHIPDESIGNS; ++i) {
             o->ships[i] = 0;

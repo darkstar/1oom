@@ -1,0 +1,316 @@
+1oom network protocol version 0 DRAFT
+
+All offsets, sizes and IDs are hex.
+All values are little endian unless otherwise noted.
+
+
+Messages: client <> server
+
+offset  sz  description
+0       2   message ID
+2       2   message payload length
+
+< 0000 : NOP : no payload
+
+< 0002 : CMD_STATUS : status of last command:
+    sz  description
+    2   status: 1=ok, 2..=error
+
+< 0008 : GAME_DATA : game data, or save without header, see doc/format_save.txt
+
+> 0011 : TURN_INPUT : player input for turn:
+    sz  description
+    2   year (add 2299 for shown year)
+    1   player number
+    1   planet focused on
+    1   tax in tenths (0..200)
+    1   security percentage in tenths (0..200)
+    N   spying percent in tenths (0..100)
+    N   spy mode: 0=hide, 1=espionage, 2=sabotage
+    6   tech slider %, bit 7 = lock
+    2   help shown (bitmask of 16 bits)
+    1   message filter (bitmask: bits same as in star data build finished, bit 5 is 1)
+    1   governor options (bits: 2..0=eco mode, 7=disallow stargates)
+    29  current ship design:
+        sz  description
+        c   name
+        2   cost
+        2   space
+        1   hull (0..3)
+        1   look (0..146)
+        4*1 weapon type (0..63)
+        4*1 weapon num
+        1   engine (0..8)
+        4   number of engines
+        3*1 special type (0..31)
+        1   shield (0..11)
+        1   jammer (0..10)
+        1   computer (0..11)
+        1   armor (0..13)
+        1   speed (0..8?)
+        2   hit points
+    N*e planet control for planets owned by player:
+        sz  description
+        1   planet index or FF for end of list
+        5   slider %, bit 7 = lock
+        1   build ship (0..5, 6=star gate)
+        1   relocation: planet index number, normally index of planet itself
+        2   transport number ; population to transport
+        1   transport destination (planet index)
+        1   extras (bitmask; bits: 0=governor, 1=spend rest on ship, 2=spend rest on ind)
+        2   target amount of missile bases for governor
+
+> 0012 : SEND_FLEET : send fleet from orbit:
+    sz  description
+    1   from planet
+    1   to planet
+    6*2 number of ships
+
+> 0013 : REDIR_FLEET : redirect fleet:
+    sz  description
+    1   to planet
+    1   old destination
+    2   x
+    2   y
+    6*2 number of ships
+
+> 0014 : REDIR_TRANS : redirect transport:
+    sz  description
+    1   to planet
+    1   old destination
+    2   x
+    2   y
+    2   population
+
+> 0015 : SEND_BC : send reserve BC:
+    sz  description
+    1   to planet
+    4   BC
+
+> 0016 : SCRAP_BASE : scrap missile bases:
+    sz  description
+    1   planet
+    2   number of bases to scrap
+
+> 0017 : SCRAP_SHIP : scrap ship design:
+    sz  description
+    1   ship design (0..5)
+    1   for new design (0/1)
+
+> 0018 : DESIGN_SHIP : add ship design:
+    sz  description
+    c   name
+    2   cost
+    2   space
+    1   hull (0..3)
+    1   look (0..146)
+    4*1 weapon type (0..63)
+    4*1 weapon num
+    1   engine (0..8)
+    4   number of engines
+    3*1 special type (0..31)
+    1   shield (0..11)
+    1   jammer (0..10)
+    1   computer (0..11)
+    1   armor (0..13)
+    1   speed (0..8?)
+    2   hit points
+
+< 0020 : TURN_MOVE : ship movement data, payload consist of submessages:
+    - 8nnn : frame n start
+    - 9nnn : frame end, n == 0 if last frame
+    - Annn : hide fleet n
+    - Bnnn : hide transport n
+    - Cnnn xxxx yyyy dd : show fleet n at (x, y) heading to d (planet index, FF = right or FE = left)
+    - Dnnn xxxx yyyy dd : show transport n at (x, y) heading to d (planet index, FF = right or FE = left)
+    - Ennn dx dy : move fleet n by (dx, dy)
+    - Fnnn dx dy : move transport n by (dx, dy) (transport FFF = amoeba, FFE = crystal)
+
+< 0021 : EXPLORE : planet explored:
+    N*1c planet explore data:
+        sz  description
+        1   planet index of FF for end of list
+        c   name
+        2   max pop
+        2   factories
+        2   missile bases
+        2   waste
+        1   planet type: 0=not habitable, 1=radiated, 2=toxic, 3=inferno, 4=dead, 5=tundra, 6=barren, 7=minimal, 8=desert, a=arid, b=ocean, c=jungle, d=terran, e=gaia
+        1   infogfx: index to planets.lbx
+        1   growth: 0=hostile, 1=nothing, 2=fertile
+        1   special: 0=normal, 1=ultra poor, 2=poor, 3=artifacts, 4=rich, 5=ultra rich, 6=4xtech
+        1   owner (0..5, 6)
+        1   unrest: 0=normal, 3=rebellion
+        1   bits: 2..0=colony ship, 7=by scanner, 6=update only
+
+< 0022 : COLONIZEQ : colonize planet question:
+    payload is planet explore data (see 0021 above) for one planet
+
+> 0023 : COLONIZEA : colonize planet answer:
+    sz  description
+    1   planet index
+    1   colonize (0/1)
+    c   name (or zeroes for keeping the current name)
+
+< 0024 : GROUND : ground battle:
+    N*2e ground battle data:
+        sz  description
+        1   planet index of FF for end of list
+        1   side 0 player (0..5)
+        1   side 1 player (0..5)
+        1   bits: 0=swap sides, 1=rebels
+        4   rng seed
+        2   attacking troops
+        2   total inbound troops
+        2   factories
+        2*8 side data:
+            sz  description
+            2   force
+            2   troops
+            1   armor index
+            1   suit index
+            1   shield index
+            1   weapon index
+        2   side 0 troops after battle
+        2   side 1 troops after battle
+        6*2 stolen tech data
+            sz  description
+            1   tech (1..100) or 0 for none
+            1   field (0..5)
+
+< 0025 : BOMBARD : orbital bombardment:
+    N*7 bombardment data:
+        sz  description
+        1   planet index of FF for end of list
+        1   attacker (0..5)
+        1   owner (0..5, 6 if destroyed)
+        2   population killed
+        2   factories destroyed
+
+< 0026 : BOMBQ : bomb planet question:
+    sz  description
+    1   planet index
+    2   population
+    2   factories
+    2   troops inbound
+
+> 0027 : BOMBA : bomb planet answer:
+    sz  description
+    1   planet index
+    1   bomb (0/1)
+
+< 0028 : NEWTECH : new technology:
+    sz  description
+    1   number of new techs
+    N*8 new tech data:
+        sz  description
+        1   field (0..5)
+        1   tech (0..99)
+        1   source (0=research, 1=spy, 2=found, 3=choose, 4=trade)
+        1   value (source 4: giver race, 2: FF for Orion or planet_i ruins or -(planet_i+1) artifact)
+        1   stolen from (0..5, 6)
+        1   can frame (0/1)
+        2*1 scapegoat player (0..5, 6)
+    6*d next tech data for field:
+        sz  description
+        1   number of choosable techs
+        c   tech (1..99) or 0 for none
+
+> 0029 : NEXTTECH : choose next tech to research:
+    sz  description
+    1   field (0..5)
+    1   tech (0..99)
+
+> 002A : FRAMEESP : frame for espionage:
+    sz  description
+    1   new tech index
+    1   scapegoat player (0..5, 6)
+
+< 002B : STEALQ : steal tech question:
+    sz  description
+    1   target player (0..5)
+    1   bitmask of fields
+
+> 002C : STEALA : steal tech answer:
+    sz  description
+    1   target player (0..5)
+    1   field (0..5) or 6 for none
+
+< 002D : STOLEN : stolen technology:
+    N*3 stolen technology data:
+        sz  description
+        1   spy player (0..5, 6) or FF for end of list
+        1   field (0..5)
+        1   tech (1..99)
+
+< 002E : SABQ : sabotage question:
+    sz  description
+    1   target player (0..5)
+
+> 002F : SABA : sabotage answer:
+    sz  description
+    1   target player (0..5)
+    1   act (0=none, 1=factories, 2=bases, 3=revolt)
+    1   planet
+
+< 0030 : SABOTAGE : sabotage:
+    N*a sabotage data:
+        sz  description
+        1   spy player (0..5, 6) or FF for end of list
+        1   target player (0..5)
+        1   act (0=none, 1=factories, 2=bases, 3=revolt)
+        2*1 scapegoat player (0..5, 6)
+        1   planet
+        2   rebels
+        2   value (factories/bases destroyed, new rebels)
+
+> 0031 : FRAMESAB : frame for espionage:
+    sz  description
+    1   target player (0..5)
+    1   scapegoat player (0..5, 6)
+
+< 0032 : TRANSSHOT : transports shot down:
+    N*2 transports shot down data:
+        sz  description
+        1   planet index of FF for end of list
+        1   transport owner
+
+< 0033 : COUNCILS : council start:
+    sz  description
+    2   total votes
+    2*1 candidate player (0..5)
+    1   number of empires
+    N*3 empire data:
+        sz  description
+        1   player (0..5)
+        1   votes
+        1   voted (0=abstain, 1,2=candidate, 3=unknown)
+
+< 0034 : VOTED : council; player voted:
+    sz  description
+    1   voting player (voter index, 0..5)
+    1   voted (0=abstain, 1,2=candidate)
+
+< 0035 : VOTEQ : council; player vote question: no payload
+
+> 0036 : VOTEA : council; player vote answer
+    sz  description
+    1   voted (0=abstain, 1,2=candidate)
+
+< 0037 : COUNCILR : council result:
+    sz  description
+    1   winner (0=none, 1,2=candidate)
+
+> 0038 : COUNCILA : council; accept ruling answer
+    sz  description
+    1   refuse ruling (0=accept, 1=refuse)
+
+< 0039 : COUNCILE : council end
+    sz  description
+    1   winner (0=none, 1,2=candidate)
+    1   refused (0=no, 1=yes)
+
+< 003A : END : the end
+    sz  description
+    1   winner (0..5, 6)
+    1   end type (0=none, 1=exile, 2=won, 3=final war, 4=tyrant, 5=funeral, 6=quit)
